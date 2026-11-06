@@ -1,8 +1,9 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jP1sAAAAASUVORK5CYII=', 'base64');
 const password = 'a good local password';
@@ -254,7 +255,78 @@ test('declared file type is checked against the bytes before an upload appears i
   assert.deepEqual((await (await owner('/api/media')).json()).items, []);
 });
 
-test('the backup command copies originals and restores a deleted item into a fresh library', async () => {
+test('the owner can move and edit media without replacing the original or invalidating its current link', async () => {
+  const dataDir = await workspace();
+  const app = await start(dataDir);
+  const owner = await ownerClient(app);
+  const guest = app.client();
+  assert.equal((await redeem(guest, await invite(owner, 'viewer@example.test'))).status, 200);
+  const upload = await openUpload(owner);
+  assert.equal((await finishUpload(owner, upload)).status, 200);
+  const route = '/api/media/' + upload.id;
+  const { url } = await (await owner(route + '/link')).json();
+  const create = await post(owner, '/api/collections', { name: ' Travel ' });
+  assert.equal(create.status, 201);
+  const travel = await create.json();
+  assert.equal(travel.name, 'Travel');
+  assert.equal((await post(owner, '/api/collections', { name: 'travel' })).status, 409);
+  const friends = await (await post(owner, '/api/collections', { name: 'Friends' })).json();
+  const patch = (client, path, body) => client(path, { method: 'PATCH', body });
+  assert.equal((await post(guest, '/api/collections', { name: 'Guest collection' })).status, 403);
+  assert.equal((await patch(guest, '/api/collections/' + travel.id, { name: 'Guest edit' })).status, 403);
+  assert.equal((await patch(guest, route, { favourite: true })).status, 403);
+  assert.equal((await patch(owner, route, { title: ' ', collectionId: travel.id })).status, 400);
+  assert.equal((await patch(owner, route, { title: 'Wrong title', collectionId: '12345678-0000-0000-0000-000000000000' })).status, 404);
+  assert.equal((await (await owner('/api/media')).json()).items[0].title, 'Tiny photo');
+  assert.equal((await patch(owner, route, { title: ' Sunset ', description: 'Taken at the coast.\nSummer trip.', collectionId: travel.id })).status, 200);
+  const changed = await patch(owner, route, { collectionId: friends.id, favourite: true });
+  assert.equal(changed.status, 200);
+  assert.equal((await changed.json()).favourite, true);
+  assert.equal((await patch(owner, '/api/collections/' + friends.id, { name: 'Friends abroad' })).status, 200);
+  const guestCatalog = await (await guest('/api/media')).json();
+  assert.equal(guestCatalog.items[0].title, 'Sunset');
+  assert.equal(guestCatalog.items[0].description, 'Taken at the coast.\nSummer trip.');
+  assert.equal(guestCatalog.items[0].collectionId, friends.id);
+  assert.equal(Object.hasOwn(guestCatalog.items[0], 'favourite'), false);
+  assert.deepEqual(guestCatalog.collections.map(collection => collection.name), ['Friends abroad', 'Travel']);
+  assert.deepEqual(Buffer.from(await (await owner(url)).arrayBuffer()), png);
+  assert.equal((await (await owner('/api/owner')).json()).usage.total, png.length);
+  assert.equal((await owner(route, { method: 'DELETE' })).status, 200);
+  assert.equal((await patch(owner, route, { favourite: false })).status, 404);
+  assert.equal((await post(owner, route + '/restore')).status, 200);
+  await app.stop();
+  const reopened = await ownerClient(await start(dataDir));
+  assert.equal((await (await reopened('/api/media')).json()).items[0].favourite, true);
+  assert.equal((await patch(reopened, route, { collectionId: null, favourite: false })).status, 200);
+  const { items } = await (await reopened('/api/media')).json();
+  assert.equal(items[0].favourite, false);
+  assert.equal(items[0].collectionId, null);
+  assert.equal(items[0].title, 'Sunset');
+});
+
+test('media from a pre-collections local catalog still opens after the schema upgrade', async () => {
+  const dataDir = await workspace();
+  const id = '12345678-0000-0000-0000-000000000000';
+  const db = new DatabaseSync(join(dataDir, 'catalog.sqlite'));
+  db.exec(`CREATE TABLE media (id TEXT PRIMARY KEY, title TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL,
+    size INTEGER NOT NULL, fingerprint TEXT NOT NULL, status TEXT NOT NULL, created INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 1)`);
+  db.prepare("INSERT INTO media (id, title, name, mime, size, fingerprint, status, created) VALUES (?, 'Older photo', ?, ?, ?, ?, 'ready', 1)")
+    .run(id, metadata.name, metadata.mime, metadata.size, metadata.fingerprint);
+  db.close();
+  await mkdir(join(dataDir, 'media'));
+  await writeFile(join(dataDir, 'media', id), png);
+  const owner = await ownerClient(await start(dataDir));
+  const { items, collections } = await (await owner('/api/media')).json();
+  assert.deepEqual(collections, []);
+  assert.equal(items[0].title, 'Older photo');
+  assert.equal(items[0].description, '');
+  assert.equal(items[0].collectionId, null);
+  assert.equal(items[0].favourite, false);
+  const { url } = await (await owner('/api/media/' + id + '/link')).json();
+  assert.deepEqual(Buffer.from(await (await owner(url)).arrayBuffer()), png);
+});
+
+test('the backup command restores originals with their collections, descriptions and owner favourites', async () => {
   const dataDir = await workspace();
   const restoreDir = await workspace();
   const backupDir = join(await workspace(), 'backup');
@@ -262,6 +334,11 @@ test('the backup command copies originals and restores a deleted item into a fre
   const owner = await ownerClient(app);
   const upload = await openUpload(owner);
   await finishUpload(owner, upload);
+  const { id: collectionId } = await (await post(owner, '/api/collections', { name: 'Travel' })).json();
+  assert.equal((await post(owner, '/api/collections', { name: 'Empty collection' })).status, 201);
+  assert.equal((await owner('/api/media/' + upload.id, {
+    method: 'PATCH', body: { description: 'From the coast', collectionId, favourite: true }
+  })).status, 200);
   await app.stop();
   const { exportBackup, restoreBackup } = await import('../backup.mjs');
   await exportBackup(dataDir, backupDir);
@@ -275,6 +352,8 @@ test('the backup command copies originals and restores a deleted item into a fre
   assert.equal(await restoreBackup(dataDir, backupDir), 1);
   const full = await start(restoreDir);
   const fullOwner = await ownerClient(full);
+  const conflicting = await post(fullOwner, '/api/collections', { name: 'Travel' });
+  assert.equal(conflicting.status, 201);
   await openUpload(fullOwner, { size: 4_000_000_000 });
   await openUpload(fullOwner, { size: 4_000_000_000, fingerprint: 'b'.repeat(64) });
   await openUpload(fullOwner, { size: 1_000_000_000, fingerprint: 'c'.repeat(64) });
@@ -285,11 +364,44 @@ test('the backup command copies originals and restores a deleted item into a fre
   await full.stop();
   assert.equal(await restoreBackup(restoreDir, backupDir), 1);
   const restored = await ownerClient(await start(restoreDir));
-  const { items } = await (await restored('/api/media')).json();
+  const { items, collections } = await (await restored('/api/media')).json();
   assert.equal(items[0].title, 'Tiny photo');
+  assert.equal(items[0].description, 'From the coast');
+  assert.equal(items[0].collectionId, collectionId);
+  assert.equal(items[0].favourite, true);
+  assert.deepEqual(collections.map(collection => collection.name), ['Empty collection', 'Travel', 'Travel (restored)']);
   const { url } = await (await restored('/api/media/' + items[0].id + '/link')).json();
   assert.deepEqual(Buffer.from(await (await restored(url)).arrayBuffer()), png);
   assert.equal(await restoreBackup(restoreDir, backupDir), 0);
+});
+
+test('a version 1 media backup still restores with empty organization fields', async () => {
+  const backupDir = await workspace();
+  const restoreDir = await workspace();
+  const id = '12345678-0000-0000-0000-000000000000';
+  await mkdir(join(backupDir, 'media'));
+  await writeFile(join(backupDir, 'media', id), png);
+  await writeFile(join(backupDir, 'catalog.json'), JSON.stringify({ version: 1, items: [{ id, title: 'Old backup', created: 1, ...metadata }] }));
+  const { restoreBackup } = await import('../backup.mjs');
+  assert.equal(await restoreBackup(restoreDir, backupDir), 1);
+  const restored = await start(restoreDir);
+  const owner = await ownerClient(restored);
+  const { items } = await (await owner('/api/media')).json();
+  assert.equal(items[0].title, 'Old backup');
+  assert.equal(items[0].collectionId, null);
+  assert.equal(items[0].description, '');
+  assert.equal(items[0].favourite, false);
+  const { id: collectionId } = await (await post(owner, '/api/collections', { name: 'After backup' })).json();
+  const route = '/api/media/' + id;
+  assert.equal((await owner(route, { method: 'PATCH', body: { collectionId, description: 'Added later', favourite: true } })).status, 200);
+  assert.equal((await owner(route, { method: 'DELETE' })).status, 200);
+  await restored.stop();
+  assert.equal(await restoreBackup(restoreDir, backupDir), 1);
+  const reopened = await ownerClient(await start(restoreDir));
+  const recovered = (await (await reopened('/api/media')).json()).items[0];
+  assert.equal(recovered.collectionId, collectionId);
+  assert.equal(recovered.description, 'Added later');
+  assert.equal(recovered.favourite, true);
 });
 
 test('the local shell and its scripts are available without cloud credentials', async () => {
@@ -298,5 +410,8 @@ test('the local shell and its scripts are available without cloud credentials', 
   assert.equal(shell.status, 200);
   assert.match(await shell.text(), /Stillroom/);
   assert.equal((await browser('/app.js')).status, 200);
+  const galleryModule = await browser('/gallery.mjs');
+  assert.equal(galleryModule.status, 200);
+  assert.match(galleryModule.headers.get('content-type'), /javascript/);
   assert.equal((await browser('/.data/catalog.sqlite')).status, 404);
 });
