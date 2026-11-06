@@ -33,6 +33,11 @@ test('a horizontal swipe moves one item and vertical gestures leave the viewer u
   assert.equal(swipeStep(18, 0), 0);
 });
 
+test('gallery search finds words in media descriptions', () => {
+  const photo = { ...media[0], description: 'Sunset at the Baltic coast.' };
+  assert.deepEqual(buildGallery([photo, ...media.slice(1)], { query: 'baltic' }).items.map(entry => entry.id), [photo.id]);
+});
+
 test('discovery plays every candidate once and avoids an immediate repeat when reshuffled', () => {
   const queue = shuffleMedia(media, 'b', () => 0.99);
   assert.deepEqual(queue.map(entry => entry.id), ['c', 'b', 'a']);

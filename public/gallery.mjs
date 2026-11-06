@@ -2,7 +2,7 @@ export function buildGallery(media, { filter = 'all', query = '', sort = 'new', 
   const search = query.trim().toLowerCase();
   const items = media.filter(item =>
     (filter === 'all' || item.kind === filter) &&
-    (item.title + ' ' + item.name).toLowerCase().includes(search)
+    (item.title + ' ' + item.name + ' ' + (item.description || '')).toLowerCase().includes(search)
   );
   if (sort === 'name') {
     items.sort((a, b) => a.title.localeCompare(b.title));

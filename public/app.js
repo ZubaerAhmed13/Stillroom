@@ -2,12 +2,16 @@ import { adjacentItem, buildGallery, shuffleMedia, swipeStep } from './gallery.m
 
 const app = document.querySelector('#app');
 const dialog = document.querySelector('#dialog');
+const editor = document.querySelector('#editor');
 const notice = document.querySelector('#notice');
 const inviteToken = location.pathname === '/invite' ? location.hash.slice(1) : '';
 if (location.hash && location.pathname === '/invite') history.replaceState(null, '', '/invite');
 
 const icons = {
   library: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  collection: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+  heart: '<path d="M20.8 9.1c0 4-8.8 9-8.8 9s-8.8-5-8.8-9a4.6 4.6 0 0 1 8.8-2 4.6 4.6 0 0 1 8.8 2Z"/>',
+  edit: '<path d="m4 16-1 5 5-1L20 8l-4-4L4 16Zm9-9 4 4"/>',
   discover: '<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/>',
   shuffle: '<path d="M3 6h3c4 0 5 12 10 12h5m-4-4 4 4-4 4M3 18h3c2 0 3-3 4-5m4-4c1-2 2-3 4-3h3m-4-4 4 4-4 4"/>',
   manage: '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2" fill="var(--panel)"/><circle cx="15" cy="12" r="2" fill="var(--panel)"/><circle cx="10" cy="17" r="2" fill="var(--panel)"/>',
@@ -31,7 +35,7 @@ const icons = {
 const icon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + icons[name] + '</svg>';
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const brand = '<div class="brand"><img src="/icon.svg" alt="" width="38" height="38"><span>Stillroom<small>PRIVATE MEDIA</small></span></div>';
-const state = { user: null, items: [], owner: null, view: 'discover', filter: 'all', query: '', sort: 'new', invite: null };
+const state = { user: null, items: [], collections: [], owner: null, view: 'discover', shelf: 'all', filter: 'all', query: '', sort: 'new', invite: null };
 let activeUpload = null;
 let uploadQueue = [];
 let noticeTimer;
@@ -73,6 +77,7 @@ function bytes(size) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(size / 1000 ** unit) + ' ' + ['B', 'KB', 'MB', 'GB'][unit];
 }
 const date = value => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(value);
+const itemCount = count => count + (count === 1 ? ' item' : ' items');
 
 function signedOut(invitation = false) {
   app.innerHTML = `
@@ -96,10 +101,13 @@ function signedOut(invitation = false) {
 function isOwner() { return state.user?.role === 'owner'; }
 
 async function refresh() {
+  const user = state.user;
   const [catalog, owner] = await Promise.all([
     request('/api/media'), isOwner() ? request('/api/owner') : null
   ]);
+  if (state.user !== user) return;
   state.items = catalog.items;
+  state.collections = catalog.collections;
   state.owner = owner;
   syncDiscovery();
   render();
@@ -129,8 +137,8 @@ function render() {
         ${page()}
       </main>
     </div>`;
-  if (state.view === 'library') drawGallery();
-  if (state.view === 'discover') observeThumbnails(app);
+  if (state.view === 'library' && state.shelf !== 'collections') drawGallery();
+  else observeThumbnails(app);
 }
 
 function storageMeter({ limit, total, available, ready, trash, reserved }) {
@@ -179,23 +187,67 @@ function discoverPage() {
   </section>`;
 }
 
-function cover(item) {
-  return `<span class="card-cover ${item.kind}">${icon(item.kind === 'video' ? 'play' : 'photo')}${item.kind === 'photo' ? `<img alt="" data-thumb="${item.id}" hidden>` : ''}<span class="kind">${item.kind === 'video' ? 'Video' : 'Photo'}</span></span>`;
+function cover(item, showKind = true) {
+  if (!item) return `<span class="card-cover">${icon('collection')}</span>`;
+  return `<span class="card-cover ${item.kind}">${icon(item.kind === 'video' ? 'play' : 'photo')}${item.kind === 'photo' ? `<img alt="" data-thumb="${item.id}" hidden>` : ''}${showKind ? `<span class="kind">${item.kind === 'video' ? 'Video' : 'Photo'}</span>` : ''}</span>`;
+}
+
+function shelfItems() {
+  if (state.shelf === 'all') return state.items;
+  if (state.shelf === 'favourites') return state.items.filter(item => item.favourite);
+  return state.items.filter(item => item.collectionId === state.shelf);
+}
+
+function selectShelf(id) {
+  state.shelf = id;
+  state.filter = 'all';
+  state.query = '';
+  state.view = 'library';
+  render();
+  window.scrollTo(0, 0);
+  document.querySelector('#library-title')?.focus();
+}
+
+function collectionGrid() {
+  if (!state.collections.length) return `<div class="empty"><div class="empty-icon">${icon('collection')}</div><h3>No collections yet</h3><p>${isOwner() ? 'Create a collection to group related photos and videos.' : 'Shared collections will appear here.'}</p></div>`;
+  const groups = new Map(state.collections.map(({ id }) => [id, { count: 0, cover: null }]));
+  for (const item of state.items) {
+    const group = groups.get(item.collectionId);
+    if (!group) continue;
+    group.count++;
+    if (!group.cover || (group.cover.kind === 'video' && item.kind === 'photo')) group.cover = item;
+  }
+  return `<div class="gallery-grid collection-grid">${state.collections.map(({ id, name }) => {
+    const group = groups.get(id);
+    return `<button class="media-card" type="button" data-action="shelf" data-id="${id}">${cover(group.cover, false)}<span class="card-details"><strong title="${escapeHtml(name)}">${escapeHtml(name)}</strong><small>${itemCount(group.count)}</small></span></button>`;
+  }).join('')}</div>`;
 }
 
 function libraryPage() {
-  const count = state.items.length;
-  const owner = state.owner;
+  const collection = state.collections.find(item => item.id === state.shelf);
+  const browsing = state.shelf === 'collections';
+  const title = collection?.name || (browsing ? 'Collections' : state.shelf === 'favourites' ? 'Favourites' : 'Your Library');
+  const sections = [['all', 'All media'], ['collections', 'Collections']];
+  if (isOwner()) sections.push(['favourites', 'Favourites']);
+  const tabs = `<nav class="library-tabs" aria-label="Library sections">${sections.map(([id, label]) => `<button class="button quiet" type="button" data-action="shelf" data-id="${id}" ${id === (collection ? 'collections' : state.shelf) ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</nav>`;
+  const owner = isOwner() ? state.owner : null;
   const interrupted = owner?.pending.length || 0;
   const usage = owner?.usage;
+  let actions = '';
+  if (owner && state.shelf === 'all') actions = `<button class="button secondary storage-link${usage.total >= usage.limit * 0.8 ? ' near-limit' : ''}" type="button" data-action="nav" data-id="manage" aria-label="Manage storage, ${bytes(usage.available)} available">${bytes(usage.total)} / ${bytes(usage.limit)}</button><button class="button primary" type="button" data-action="upload">${icon('up')} Upload</button>`;
+  if (owner && browsing) actions = `<button class="button primary" type="button" data-action="collection-edit">${icon('plus')} New collection</button>`;
+  if (owner && collection) actions = `<button class="button secondary" type="button" data-action="collection-edit" data-id="${collection.id}">${icon('edit')} Rename collection</button>`;
   return `
     <section class="collection" aria-labelledby="library-title">
+      ${tabs}
+      ${collection ? `<button class="button quiet collection-back" type="button" data-action="shelf" data-id="collections">${icon('previous')} All collections</button>` : ''}
       <div class="section-heading library-heading">
-        <div><h1 id="library-title" tabindex="-1">Your Library</h1><p>${count} ${count === 1 ? 'item' : 'items'}</p></div>
-        ${owner ? `<div class="library-actions"><button class="button secondary storage-link${usage.total >= usage.limit * 0.8 ? ' near-limit' : ''}" type="button" data-action="nav" data-id="manage" aria-label="Manage storage, ${bytes(usage.available)} available">${bytes(usage.total)} / ${bytes(usage.limit)}</button><button class="button primary" type="button" data-action="upload">${icon('up')} Upload</button></div>` : ''}
+        <div><h1 id="library-title" tabindex="-1">${escapeHtml(title)}</h1><p>${browsing ? state.collections.length + (state.collections.length === 1 ? ' collection' : ' collections') : itemCount(shelfItems().length)}</p></div>
+        ${actions ? `<div class="library-actions">${actions}</div>` : ''}
       </div>
-      ${usage && usage.total >= usage.limit * 0.8 ? `<p class="capacity-warning" role="status">${usage.available ? bytes(usage.available) + ' available before the storage limit.' : 'Storage full. Free space in Manage to upload more.'}</p>` : ''}
-      ${interrupted ? `<button class="pending-banner" type="button" data-action="upload">${icon('clock')} ${interrupted} interrupted ${interrupted === 1 ? 'upload' : 'uploads'} ${icon('arrow')}</button>` : ''}
+      ${browsing ? collectionGrid() : `
+      ${state.shelf === 'all' && usage && usage.total >= usage.limit * 0.8 ? `<p class="capacity-warning" role="status">${usage.available ? bytes(usage.available) + ' available before the storage limit.' : 'Storage full. Free space in Manage to upload more.'}</p>` : ''}
+      ${state.shelf === 'all' && interrupted ? `<button class="pending-banner" type="button" data-action="upload">${icon('clock')} ${interrupted} interrupted ${interrupted === 1 ? 'upload' : 'uploads'} ${icon('arrow')}</button>` : ''}
       <div class="collection-tools">
         <div class="filters" aria-label="Filter media">
           ${[['all', 'All'], ['photo', 'Photos'], ['video', 'Videos']].map(([key, label]) => `<button type="button" data-action="filter" data-id="${key}" aria-pressed="${state.filter === key}">${label}</button>`).join('')}
@@ -205,7 +257,7 @@ function libraryPage() {
           <label class="sort"><span class="sr-only">Sort media</span><select id="sort"><option value="new" ${state.sort === 'new' ? 'selected' : ''}>Newest</option><option value="old" ${state.sort === 'old' ? 'selected' : ''}>Oldest</option><option value="name" ${state.sort === 'name' ? 'selected' : ''}>A–Z</option></select></label>
         </div>
       </div>
-      <div id="gallery"></div>
+      <div id="gallery"></div>`}
     </section>`;
 }
 
@@ -228,12 +280,18 @@ function managePage() {
 function drawGallery() {
   const gallery = document.querySelector('#gallery');
   if (!gallery) return;
-  const { items, sections } = buildGallery(state.items, state);
+  const source = shelfItems();
+  const { items, sections } = buildGallery(source, state);
   visibleItems = items;
   if (!items.length) {
     thumbnailObserver?.disconnect();
-    const empty = !state.items.length && state.filter === 'all' && !state.query.trim();
-    gallery.innerHTML = `<div class="empty"><div class="empty-icon">${icon('photo')}</div><h3>${empty ? 'Your collection is empty' : 'No matching media'}</h3><p>${empty ? (isOwner() ? 'Add a photo or video to get started.' : 'Shared photos and videos will appear here.') : 'Try a different search or filter.'}</p>${empty && isOwner() ? '<button type="button" class="button secondary" data-action="upload">Add your first file</button>' : ''}</div>`;
+    const empty = !source.length;
+    const all = state.shelf === 'all';
+    const favourites = state.shelf === 'favourites';
+    let message = 'Try a different search or filter.';
+    if (empty && all) message = isOwner() ? 'Add a photo or video to get started.' : 'Shared photos and videos will appear here.';
+    if (empty && !all) message = favourites ? 'Open any item and tap the heart to save it here.' : (isOwner() ? 'Open a photo or video, then choose Details and Edit details to move it here.' : 'Shared photos and videos will appear here.');
+    gallery.innerHTML = `<div class="empty"><div class="empty-icon">${icon(favourites ? 'heart' : 'photo')}</div><h3>${empty ? (favourites ? 'No favourites yet' : 'No media yet') : 'No matching media'}</h3><p>${message}</p>${empty && all && isOwner() ? '<button type="button" class="button secondary" data-action="upload">Add your first file</button>' : ''}</div>`;
     return;
   }
   gallery.innerHTML = sections.map(section => `<section class="gallery-section">
@@ -241,7 +299,7 @@ function drawGallery() {
     <div class="gallery-grid">${section.items.map(item => `
     <button class="media-card" id="media-${item.id}" type="button" data-action="media" data-id="${item.id}">
       ${cover(item)}
-      <span class="card-details"><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong></span>
+      <span class="card-details"><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong>${isOwner() && item.favourite ? `<span class="card-favourite" aria-hidden="true">${icon('heart')}</span>` : ''}</span>
     </button>`).join('')}</div></section>`).join('');
   observeThumbnails(gallery);
 }
@@ -317,17 +375,18 @@ dialog.addEventListener('close', () => {
   uploadQueue = [];
   dialog.innerHTML = '';
   if (viewing) {
-    const { origin, scroll, fromDiscovery } = viewing;
+    const { origin, scroll, fromDiscovery, dirty } = viewing;
     viewing = null;
-    if (fromDiscovery && state.view === 'discover' && state.user) render();
+    if (state.user && (dirty || (fromDiscovery && state.view === 'discover'))) render();
     window.scrollTo(scroll.x, scroll.y);
     const fallback = fromDiscovery ? '[data-action="discover-open"]' : '#library-title';
-    (origin.isConnected ? origin : document.querySelector(fallback))?.focus({ preventScroll: true });
+    const restoredOrigin = origin.isConnected ? origin : document.getElementById(origin.id);
+    (restoredOrigin || document.querySelector(fallback))?.focus({ preventScroll: true });
   }
 });
 
 function stepViewer(step, autoplay = false) {
-  if (!viewing || !dialog.open) return;
+  if (!viewing || !dialog.open || editor.open) return;
   const item = adjacentItem(viewing.items, viewing.id, step);
   if (item) showMedia(item, { autoplay });
 }
@@ -340,6 +399,15 @@ dialog.addEventListener('keydown', event => {
   stepViewer(event.key === 'ArrowLeft' ? -1 : 1);
 });
 
+function viewerDetails(item) {
+  const collection = state.collections.find(entry => entry.id === item.collectionId);
+  return `<strong>${escapeHtml(item.name)}</strong><p>${date(item.created)} · ${bytes(item.size)}</p>
+    ${collection ? `<p>Collection · ${escapeHtml(collection.name)}</p>` : ''}
+    ${item.description ? `<p class="media-description">${escapeHtml(item.description)}</p>` : ''}
+    ${isOwner() ? `<div class="viewer-detail-actions"><button class="button quiet" type="button" data-action="media-edit" data-id="${item.id}">${icon('edit')} Edit details</button>
+      <button class="button quiet danger-text" type="button" data-action="trash-item" data-id="${item.id}">${icon('trash')} Move to trash</button></div>` : ''}`;
+}
+
 async function showMedia(item, { origin, fromDiscovery = false, autoplay = false } = {}) {
   if (origin) viewing = { items: fromDiscovery ? discovery.items : visibleItems, origin, fromDiscovery, automatic: false,
     scroll: { x: window.scrollX, y: window.scrollY } };
@@ -350,6 +418,7 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
   if (viewing.fromDiscovery) discovery.index = position;
   const autoButton = viewing.fromDiscovery && items.length > 1
     ? `<button class="button quiet viewer-auto" type="button" data-action="viewer-auto" aria-pressed="${viewing.automatic}">Auto-next</button>` : '';
+  const favouriteButton = isOwner() ? `<button class="icon-button viewer-favourite" type="button" data-action="favourite" data-id="${item.id}" aria-label="Favourite" title="Favourite" aria-pressed="${item.favourite}">${icon('heart')}</button>` : '';
   const focused = dialog.contains(document.activeElement) ? document.activeElement.dataset.action : null;
   openDialog(item.title, `
     <div id="viewer" class="viewer"><p role="status">Opening media…</p></div>
@@ -357,12 +426,11 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
       <button class="button secondary viewer-step" type="button" data-action="viewer-previous" ${position <= 0 ? 'disabled' : ''}>${icon('previous')} <span>Previous</span></button>
       <div class="viewer-meta">
         <span>${position + 1} / ${items.length}</span>
-        <details class="viewer-info"><summary>Details</summary><div><strong>${escapeHtml(item.name)}</strong><p>${date(item.created)} · ${bytes(item.size)}</p>
-          ${isOwner() ? `<button class="button quiet danger-text" type="button" data-action="trash-item" data-id="${item.id}">${icon('trash')} Move to trash</button>` : ''}
-        </div></details>
+        <details class="viewer-info"><summary>Details</summary><div class="viewer-detail-content">${viewerDetails(item)}</div></details>
       </div>
       <button class="button secondary viewer-step" type="button" data-action="viewer-next" ${position === items.length - 1 ? 'disabled' : ''}><span>Next</span> ${icon('next')}</button>
-    </footer>`, 'media-dialog', autoButton);
+      <p class="viewer-message form-message" role="status"></p>
+    </footer>`, 'media-dialog', autoButton + favouriteButton);
   const focusTarget = ['viewer-previous', 'viewer-next'].includes(focused)
     ? dialog.querySelector('[data-action="' + focused + '"]:not(:disabled)') : null;
   (focusTarget || dialog.querySelector('[data-action="close"]')).focus({ preventScroll: true });
@@ -436,7 +504,7 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
       let timer;
       const schedule = () => {
         clearTimeout(timer);
-        if (viewing?.automatic && element.naturalWidth) timer = setTimeout(() => stepViewer(1, true), 5000);
+        if (viewing?.automatic && !editor.open && element.naturalWidth) timer = setTimeout(() => stepViewer(1, true), 5000);
       };
       viewing.syncAuto = schedule;
       element.addEventListener('load', schedule, { once: true });
@@ -447,6 +515,98 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
     if (autoplay && item.kind === 'video') element.play().catch(() => {});
   } catch (error) {
     if (viewer.isConnected) setMessage(viewer, error.message);
+  }
+}
+
+function showEditor(title, formId, id, fields, saveLabel) {
+  editor.innerHTML = `<header class="dialog-head"><h2 id="editor-title">${escapeHtml(title)}</h2><button class="icon-button" type="button" data-action="close-editor" aria-label="Close editor">${icon('close')}</button></header>
+    <form id="${formId}" class="dialog-body" data-id="${id || ''}">${fields}
+      <p class="form-message" role="status"></p><div class="form-actions"><button class="button quiet" type="button" data-action="close-editor">Cancel</button><button class="button primary" type="submit">${saveLabel}</button></div></form>`;
+  editor.showModal();
+  editor.querySelector('input').focus();
+  viewing?.syncAuto?.();
+}
+
+editor.addEventListener('close', () => {
+  if (!editor.open) viewing?.syncAuto?.();
+});
+
+function editCollection(id) {
+  const collection = state.collections.find(entry => entry.id === id);
+  if (id && !collection) return;
+  showEditor(id ? 'Rename collection' : 'New collection', 'collection-form', id,
+    `<label>Name<input name="name" maxlength="80" required value="${escapeHtml(collection?.name)}" placeholder="e.g. Travel"></label>`,
+    id ? 'Save name' : 'Create collection');
+}
+
+function editMedia(id) {
+  const item = state.items.find(entry => entry.id === id);
+  if (!item) return;
+  dialog.querySelector('video')?.pause();
+  showEditor('Edit media details', 'media-form', id,
+    `<label>Title<input name="title" maxlength="120" required value="${escapeHtml(item.title)}"></label>
+    <label>Description<textarea name="description" rows="4" maxlength="2000" placeholder="Add a note about this photo or video">${escapeHtml(item.description)}</textarea></label>
+    <label>Collection<select name="collectionId"><option value="">No collection</option>${state.collections.map(entry => `<option value="${entry.id}" ${entry.id === item.collectionId ? 'selected' : ''}>${escapeHtml(entry.name)}</option>`).join('')}</select></label>`, 'Save changes');
+}
+
+async function updateMedia(id, changes) {
+  const user = state.user;
+  const result = await request('/api/media/' + id, { method: 'PATCH', body: changes });
+  if (state.user !== user) return;
+  const edited = Object.fromEntries(Object.keys(changes).map(key => [key, result[key]]));
+  const update = item => item.id === id ? { ...item, ...edited } : item;
+  state.items = state.items.map(update);
+  syncDiscovery();
+  if (viewing && dialog.open) {
+    viewing.items = viewing.items.map(update);
+    viewing.dirty = true;
+  } else render();
+}
+
+async function saveOrganization(form) {
+  const { id } = form.dataset;
+  const user = state.user;
+  const fields = new FormData(form);
+  const submit = form.querySelector('[type="submit"]');
+  const message = form.querySelector('.form-message');
+  submit.disabled = true;
+  setMessage(message, '');
+  try {
+    if (form.id === 'collection-form') {
+      const collection = await request('/api/collections' + (id ? '/' + id : ''), {
+        method: id ? 'PATCH' : 'POST', body: { name: fields.get('name') }
+      });
+      if (state.user !== user) return;
+      state.collections = [...state.collections.filter(item => item.id !== collection.id), collection]
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (editor.open && form.isConnected) {
+        editor.close();
+        selectShelf(collection.id);
+      } else render();
+      flash(id ? 'Collection renamed.' : 'Collection created.');
+      return;
+    }
+    const changes = {};
+    const { title, description, collectionId } = form.elements;
+    if (title.value !== title.defaultValue) changes.title = title.value;
+    if (description.value !== description.defaultValue) changes.description = description.value;
+    const originalCollection = Array.from(collectionId.options).find(option => option.defaultSelected)?.value || '';
+    if (collectionId.value !== originalCollection) changes.collectionId = collectionId.value || null;
+    if (Object.keys(changes).length) await updateMedia(id, changes);
+    if (state.user !== user) return;
+    if (editor.open && form.isConnected) editor.close();
+    const item = viewing?.id === id && dialog.open && state.items.find(entry => entry.id === id);
+    if (item) {
+      setMessage(dialog.querySelector('#dialog-title'), item.title);
+      dialog.querySelector('.viewer img')?.setAttribute('alt', item.title);
+      dialog.querySelector('.viewer-detail-content').innerHTML = viewerDetails(item);
+      if (!editor.open && dialog.querySelector('.viewer-info').open) dialog.querySelector('[data-action="media-edit"]').focus();
+    } else flash('Media details saved.');
+  } catch (error) {
+    if (form.isConnected && editor.open) setMessage(message, error.message);
+    else flash(error.message);
+  } finally {
+    submit.disabled = false;
   }
 }
 
@@ -591,6 +751,10 @@ async function uploadFiles() {
 
 document.addEventListener('submit', async event => {
   const form = event.target;
+  if (form.id === 'collection-form' || form.id === 'media-form') {
+    event.preventDefault();
+    return saveOrganization(form);
+  }
   if (!['auth-form', 'invite-form', 'upload-form'].includes(form.id)) return;
   event.preventDefault();
   if (form.id === 'upload-form') return uploadFiles();
@@ -606,6 +770,7 @@ document.addEventListener('submit', async event => {
       const { user } = await request('/api/auth/' + (accepting ? 'redeem' : 'login'), { method: 'POST', body });
       state.user = user;
       state.view = 'discover';
+      state.shelf = 'all';
       if (accepting) history.replaceState(null, '', '/');
     } else {
       state.invite = await request('/api/invites', { method: 'POST', body: { email: fields.get('email') } });
@@ -625,6 +790,7 @@ document.addEventListener('click', async event => {
   const { action, id } = button.dataset;
   if (action === 'nav' || action === 'search') {
     const view = action === 'search' ? 'library' : id;
+    if (action === 'search' && state.shelf !== 'all') selectShelf('all');
     if (state.view !== view) {
       state.view = view;
       render();
@@ -633,6 +799,10 @@ document.addEventListener('click', async event => {
     document.querySelector(action === 'search' ? '#search' : '#main h1')?.focus();
     return;
   }
+  if (action === 'shelf') return selectShelf(id);
+  if (action === 'collection-edit') return editCollection(id);
+  if (action === 'media-edit') return editMedia(id);
+  if (action === 'close-editor') return editor.close();
   if (action === 'filter') {
     state.filter = id;
     document.querySelectorAll('[data-action="filter"]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
@@ -685,11 +855,21 @@ document.addEventListener('click', async event => {
       await request('/api/auth/logout', { method: 'POST' });
       state.user = state.owner = state.invite = null;
       state.items = [];
+      state.collections = [];
       discovery = { kind: 'all', items: [], index: 0 };
       state.query = '';
       state.filter = 'all';
       state.sort = 'new';
       signedOut();
+      return;
+    }
+    if (action === 'favourite') {
+      const favourite = button.getAttribute('aria-pressed') !== 'true';
+      setMessage(dialog.querySelector('.viewer-message'), '');
+      await updateMedia(id, { favourite });
+      if (viewing?.id === id && dialog.open) {
+        dialog.querySelector('[data-action="favourite"]')?.setAttribute('aria-pressed', String(favourite));
+      }
       return;
     }
     if (action === 'revoke') {
@@ -728,7 +908,9 @@ document.addEventListener('click', async event => {
       closeDialog();
       signedOut();
     }
-    flash(error.message);
+    if (action === 'favourite' && button.isConnected && dialog.open) {
+      setMessage(dialog.querySelector('.viewer-message'), error.message);
+    } else flash(error.message);
   } finally {
     button.disabled = false;
   }

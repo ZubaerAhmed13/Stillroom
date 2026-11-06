@@ -18,7 +18,7 @@ const pages = new Map([
   ['/gallery.mjs', ['gallery.mjs', 'text/javascript; charset=utf-8']],
   ['/icon.svg', ['icon.svg', 'image/svg+xml']]
 ]);
-const writeMethods = new Set(['POST', 'PUT', 'DELETE']);
+const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 function guardOrigin(request) {
   if (!writeMethods.has(request.method)) return;
@@ -73,9 +73,13 @@ export async function createApp({
       case 'POST /api/auth/logout':
         access.logout(request, response);
         return json(response, 200, {});
-      case 'GET /api/media':
-        access.requireUser(request);
-        return json(response, 200, { items: media.list() });
+      case 'GET /api/media': {
+        const user = access.requireUser(request);
+        return json(response, 200, media.list(user.role === 'owner'));
+      }
+      case 'POST /api/collections':
+        access.requireUser(request, true);
+        return json(response, 201, media.saveCollection(await readJson(request)));
       case 'GET /api/owner':
         access.requireUser(request, true);
         return json(response, 200, { ...access.invites(), trash: media.trash(), pending: await media.pending(), usage: media.usage(), maxFile: MAX_FILE });
@@ -97,6 +101,10 @@ export async function createApp({
       access.revoke(id);
       return json(response, 200, {});
     }
+    if (collection === 'collections' && !subresource && method === 'PATCH') {
+      access.requireUser(request, true);
+      return json(response, 200, media.saveCollection(await readJson(request), id));
+    }
     if (collection === 'uploads') {
       access.requireUser(request, true);
       if (!subresource && method === 'PUT') return json(response, 200, await media.chunk(request, id, searchParams.get('offset')));
@@ -110,6 +118,7 @@ export async function createApp({
       const user = access.requireUser(request, writeMethods.has(method));
       if (subresource === 'link' && method === 'GET') return json(response, 200, media.link(id, user));
       if (subresource === 'content' && ['GET', 'HEAD'].includes(method)) return media.content(request, response, id, user, searchParams);
+      if (!subresource && method === 'PATCH') return json(response, 200, media.edit(id, await readJson(request)));
       if (!subresource && method === 'DELETE') {
         await media.move(id, 'ready', 'trashed');
         return json(response, 200, {});

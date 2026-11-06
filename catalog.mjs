@@ -45,7 +45,26 @@ export function openCatalog(directory) {
     CREATE INDEX IF NOT EXISTS media_status ON media(status, created);
     CREATE INDEX IF NOT EXISTS media_fingerprint ON media(fingerprint);
   `);
+  try {
+    atomic(db, () => {
+      if (db.prepare('PRAGMA user_version').get().user_version >= 1) return;
+      db.exec(`
+        CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE);
+        ALTER TABLE media ADD COLUMN collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL;
+        ALTER TABLE media ADD COLUMN description TEXT NOT NULL DEFAULT '';
+        ALTER TABLE media ADD COLUMN favourite INTEGER NOT NULL DEFAULT 0 CHECK(favourite IN (0, 1));
+        PRAGMA user_version = 1;
+      `);
+    });
+  } catch (error) {
+    db.close();
+    throw error;
+  }
   return db;
+}
+
+export function listCollections(db) {
+  return db.prepare('SELECT id, name FROM collections ORDER BY name').all();
 }
 
 export function atomic(db, callback) {

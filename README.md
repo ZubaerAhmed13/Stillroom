@@ -14,7 +14,9 @@ The app uses built-in Node.js modules, SQLite, and local files. It starts with a
 ## Use the library
 
 - **Discover** opens a shuffled selection. Choose photos or videos, shuffle again, or open an item and enable **Auto-next** for continuous viewing through the current selection.
-- In **Library**, browse the date grid or search by title or filename. Open an item and use Previous, Next, or the arrow keys to move through the selection.
+- In **Library**, browse the date grid or search by title, description, or filename. Open an item and use Previous, Next, or the arrow keys to move through the selection.
+- The owner can create and rename **Collections**. To change a title or description, or to move an item to a collection, open the item and choose **Details → Edit details**. Each item can be in one collection. Guests can browse shared collections and read descriptions.
+- The owner can tap the heart in the viewer to add or remove a media item from **Library → Favourites**. This list is private to the owner.
 - The owner can choose **Upload** in Library or **Manage → Uploads**. The queue shows progress per file. Choose the same file again to resume an interrupted upload after a reload or restart. **Manage** also opens storage, guest invitations, and Trash.
 - In **Invitations**, create and copy a single-use link for the guest. Send it privately to the intended person. A link expires in seven days. Pending links and active guests share the ten slots. Revoking access invalidates the guest's local session.
 - In **Trash**, restore an item or delete its original file. Items in Trash still use storage until you permanently delete them.
@@ -35,7 +37,7 @@ npm run backup -- export /path/to/new-backup-folder
 npm run backup -- restore /path/to/existing-backup-folder
 ```
 
-The backup includes the originals currently in the library and their catalog records. Start the app after restoring to browse the recovered collection. Owner credentials and guest invitations are managed separately from this media backup.
+The backup includes the originals currently in the library, their titles and descriptions, collection assignments, and the owner's favourites. Start the app after restoring to browse the recovered collection. Older media backups still restore. Owner credentials and guest invitations are managed separately from this media backup.
 
 ## Cloud integration milestone
 
