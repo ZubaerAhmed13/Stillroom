@@ -15,6 +15,7 @@ const pages = new Map([
   ['/invite', ['index.html', 'text/html; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/gallery.mjs', ['gallery.mjs', 'text/javascript; charset=utf-8']],
   ['/icon.svg', ['icon.svg', 'image/svg+xml']]
 ]);
 const writeMethods = new Set(['POST', 'PUT', 'DELETE']);

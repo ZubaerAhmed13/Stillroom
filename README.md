@@ -13,7 +13,9 @@ The app uses built-in Node.js modules, SQLite, and local files. It starts with a
 
 ## Use the library
 
-- In **Library**, upload one or several files. Choose the same file again to resume an interrupted upload after a reload or restart. The app also offers **Pause** and **Resume** while the upload dialog stays open.
+- **Discover** opens a shuffled selection. Choose photos or videos, shuffle again, or open an item and enable **Auto-next** for continuous viewing through the current selection.
+- In **Library**, browse the date grid or search by title or filename. Open an item and use Previous, Next, or the arrow keys to move through the selection.
+- The owner can choose **Upload** in Library or **Manage → Uploads**. The queue shows progress per file. Choose the same file again to resume an interrupted upload after a reload or restart. **Manage** also opens storage, guest invitations, and Trash.
 - In **Invitations**, create and copy a single-use link for the guest. Send it privately to the intended person. A link expires in seven days. Pending links and active guests share the ten slots. Revoking access invalidates the guest's local session.
 - In **Trash**, restore an item or delete its original file. Items in Trash still use storage until you permanently delete them.
 - Supported formats are JPG, PNG, WebP, GIF, MP4 and WebM, with a 4 GiB limit per file. Video playback depends on the browser's codec support. MOV and HEIC files need conversion before upload.

@@ -298,5 +298,8 @@ test('the local shell and its scripts are available without cloud credentials', 
   assert.equal(shell.status, 200);
   assert.match(await shell.text(), /Stillroom/);
   assert.equal((await browser('/app.js')).status, 200);
+  const galleryModule = await browser('/gallery.mjs');
+  assert.equal(galleryModule.status, 200);
+  assert.match(galleryModule.headers.get('content-type'), /javascript/);
   assert.equal((await browser('/.data/catalog.sqlite')).status, 404);
 });
