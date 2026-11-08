@@ -1,37 +1,29 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
-import { formats, hasMediaSignature, parseRange } from './local-media.mjs';
+import { hasMediaSignature, parseRange, MAX_FILE, uploadDetails } from './media-format.mjs';
 import { HttpError, readBody } from './http.mjs';
-import { atomic } from './catalog.mjs';
+import { atomic, listCollections } from './catalog.mjs';
 import { FREE_STORAGE_LIMIT, requireStorageCapacity, storageUsage } from './storage-budget.mjs';
 
-export const MAX_FILE = 4 * 1024 ** 3;
+export { MAX_FILE } from './media-format.mjs';
 export const MEDIA_ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const LINK_DURATION = 15 * 60 * 1000;
 
-export function describe(item) {
+export function describe(item, owner = false) {
   return {
     id: item.id, title: item.title, name: item.name, mime: item.mime, size: item.size,
-    kind: item.mime.startsWith('video/') ? 'video' : 'photo', created: item.created
+    kind: item.mime.startsWith('video/') ? 'video' : 'photo', created: item.created,
+    description: item.description, collectionId: item.collection_id,
+    ...(owner ? { favourite: Boolean(item.favourite) } : {})
   };
 }
 
-function uploadDetails(body) {
-  const name = typeof body.name === 'string' ? body.name.replace(/[\x00-\x1f\x7f]/g, '').trim() : '';
-  if (!name || name.length > 255 || /[/\\]/.test(name)) throw new HttpError(400, 'Enter a valid file name.');
-  const ext = name.split('.').pop().toLowerCase();
-  if (!Object.hasOwn(formats, body.mime) || !formats[body.mime].includes(ext)) {
-    throw new HttpError(415, 'Choose a JPG, PNG, WebP, GIF, MP4 or WebM file.');
+export function collectionName(value) {
+  const name = typeof value === 'string' ? value.trim() : '';
+  if (!name || name.length > 80 || /[\x00-\x1f\x7f]/.test(name)) {
+    throw new HttpError(400, 'Enter a collection name of up to 80 characters.');
   }
-  if (!Number.isSafeInteger(body.size) || body.size <= 0 || body.size > MAX_FILE) {
-    throw new HttpError(400, 'Choose a file between 1 byte and 4 GiB.');
-  }
-  if (typeof body.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(body.fingerprint)) {
-    throw new HttpError(400, 'The upload fingerprint is invalid.');
-  }
-  const title = typeof body.title === 'string' ? body.title.trim() : '';
-  if (title.length > 120 || /[\x00-\x1f\x7f]/.test(title)) throw new HttpError(400, 'Use a title of up to 120 characters.');
-  return { name, title: title || name.slice(0, -(ext.length + 1)).slice(0, 120) || name, mime: body.mime, size: body.size, fingerprint: body.fingerprint };
+  return name;
 }
 
 export function openMedia(db, blobs, { chunkSize, now, storageLimit = FREE_STORAGE_LIMIT }) {
@@ -41,6 +33,7 @@ export function openMedia(db, blobs, { chunkSize, now, storageLimit = FREE_STORA
   const signingKey = randomBytes(32);
   const busy = new Set();
   const find = db.prepare('SELECT * FROM media WHERE id = ?');
+  const findCollection = db.prepare('SELECT id, name FROM collections WHERE id = ?');
   const deleteRow = db.prepare('DELETE FROM media WHERE id = ?');
   const setStatus = db.prepare('UPDATE media SET status = ?, version = version + 1 WHERE id = ?');
 
@@ -70,11 +63,49 @@ export function openMedia(db, blobs, { chunkSize, now, storageLimit = FREE_STORA
   }
 
   return {
-    list() {
-      return ownerList('ready').map(describe);
+    list(owner) {
+      return { items: ownerList('ready').map(item => describe(item, owner)), collections: listCollections(db) };
+    },
+    saveCollection(body, id) {
+      const name = collectionName(body.name);
+      return atomic(db, () => {
+        if (id && !findCollection.get(id)) throw new HttpError(404, 'Collection not found.');
+        const existing = db.prepare('SELECT id FROM collections WHERE name = ?').get(name);
+        if (existing && existing.id !== id) throw new HttpError(409, 'A collection already has that name.');
+        if (id) {
+          db.prepare('UPDATE collections SET name = ? WHERE id = ?').run(name, id);
+        } else {
+          id = randomUUID();
+          db.prepare('INSERT INTO collections (id, name) VALUES (?, ?)').run(id, name);
+        }
+        return { id, name };
+      });
+    },
+    edit(id, body) {
+      return atomic(db, () => {
+        const item = findStatus(id, ['ready']);
+        const title = typeof body.title === 'string' ? body.title.trim() : '';
+        if (body.title !== undefined && (!title || title.length > 120 || /[\x00-\x1f\x7f]/.test(title))) {
+          throw new HttpError(400, 'Enter a title of up to 120 characters.');
+        }
+        const description = body.description === undefined ? item.description : body.description;
+        if (typeof description !== 'string' || description.length > 2000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(description)) {
+          throw new HttpError(400, 'Use a description of up to 2,000 characters.');
+        }
+        const collectionId = body.collectionId === undefined ? item.collection_id : body.collectionId;
+        if (body.collectionId !== undefined && collectionId !== null) {
+          if (typeof collectionId !== 'string' || !MEDIA_ID.test(collectionId)) throw new HttpError(400, 'Choose a valid collection.');
+          if (!findCollection.get(collectionId)) throw new HttpError(404, 'Collection not found.');
+        }
+        if (body.favourite !== undefined && typeof body.favourite !== 'boolean') throw new HttpError(400, 'Invalid favourite setting.');
+        const favourite = body.favourite === undefined ? item.favourite : Number(body.favourite);
+        db.prepare('UPDATE media SET title = ?, description = ?, collection_id = ?, favourite = ? WHERE id = ?')
+          .run(body.title === undefined ? item.title : title, description.trim(), collectionId, favourite, id);
+        return describe(find.get(id), true);
+      });
     },
     trash() {
-      return ownerList('trashed').map(describe);
+      return ownerList('trashed').map(item => describe(item));
     },
     async pending() {
       return Promise.all(ownerList('uploading').map(async item => ({
