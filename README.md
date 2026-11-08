@@ -30,7 +30,7 @@ The meter measures this Stillroom library. When connecting R2, keep the bucket o
 
 ## Back up and restore
 
-Stop the app before running either command. Use a separate disk or location if you are backing up important originals.
+Stop the local app before exporting or restoring its data. Use a separate disk or location for important originals.
 
 ```sh
 npm run backup -- export /path/to/new-backup-folder
@@ -39,6 +39,25 @@ npm run backup -- restore /path/to/existing-backup-folder
 
 The backup includes the originals currently in the library, their titles and descriptions, collection assignments, and the owner's favourites. Start the app after restoring to browse the recovered collection. Older media backups still restore. Owner credentials and guest invitations are managed separately from this media backup.
 
+### Back up the hosted library
+
+Run this from the Stillroom checkout in an interactive terminal on a computer with Node.js 24 or newer. The command keeps your owner email and password hidden as you enter them.
+
+```sh
+npm run backup -- export-hosted /path/to/new-backup-folder
+```
+
+Choose a new folder on a drive you control. The export downloads each original in the active library, records its SHA-256 checksum, and saves the catalog with collections, descriptions, and favourites. Items in Trash can be restored to the active library before export. The download uses the normal authenticated, metered R2 read path.
+
+To verify the backup, set `STILLROOM_DATA_DIR` to a new local directory and restore into it. Start the local app with the same data directory. Set local owner credentials before first launch as described in [Start locally](#start-locally), or use the password printed at first launch.
+
+```sh
+STILLROOM_DATA_DIR=/path/to/new-restore-folder npm run backup -- restore /path/to/backup-folder
+STILLROOM_DATA_DIR=/path/to/new-restore-folder npm start
+```
+
+The restore verifies every original's size, format, and checksum before making the new library available. Keep the backup folder intact so the catalog and originals stay together. Credentials and invitation links are managed separately.
+
 ## Hosted sign-in preview
 
 The [Stillroom preview](https://stillroom-pilot.zubaerahmed13.workers.dev/) supports owner setup, password sign-in, shared collections, and guest invitations and revocation. The owner activates their account through a one-use setup link. Returning guests use their existing hosted password when redeeming a fresh invitation.
@@ -46,6 +65,22 @@ The [Stillroom preview](https://stillroom-pilot.zubaerahmed13.workers.dev/) supp
 The Cloudflare Worker serves the same interface as the local app. Supabase Auth checks passwords. Postgres stores membership and checks each Stillroom session against the current invitation status. The bridge shared key belongs in a Worker secret, with its SHA-256 digest registered in the database and configured in the Supabase Edge Function. The Supabase service role key stays in the Edge Function. Use a dedicated Supabase project because the enrollment trigger enforces invitation-only creation on its Auth user table.
 
 Run `node hosted/bundle.mjs` to prepare the Worker modules and `npm test` for local tests. The rollback-only check in `supabase/tests/hosted_access.sql` requires an empty Stillroom project. It covers deferred enrollment, invitation reuse and expiry rules, the guest cap, and revocation.
+
+### Recover hosted owner access
+
+This is a project administrator procedure. Identify the owner in the dedicated Stillroom Supabase project by querying `select id from stillroom_private.members where role = 'owner';`. Confirm the same UUID under Authentication → Users. From a trusted administrator environment, reset that user's password with Supabase Auth's server-only `auth.admin.updateUserById(ownerId, { password })` method. [Supabase Auth admin reference](https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid)
+
+After the password change, clear the owner's existing Stillroom sessions in the SQL editor. Substitute the verified UUID before running the transaction.
+
+```sql
+begin;
+select pg_advisory_xact_lock(216401, 1);
+delete from stillroom_private.sessions s using stillroom_private.members m
+where s.member_id = m.id and m.role = 'owner' and m.id = '<verified-owner-uuid>';
+commit;
+```
+
+Check that a previous session is denied. Sign in with the replacement password and confirm the existing library and settings are visible.
 
 ## Private R2 media pilot
 
