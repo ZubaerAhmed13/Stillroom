@@ -1,4 +1,4 @@
-import { adjacentItem, buildGallery, shuffleMedia, swipeStep } from './gallery.mjs';
+import { adjacentItem, buildGallery, shuffleMedia, swipeStep, verticalKeyStep } from './gallery.mjs';
 
 const app = document.querySelector('#app');
 const dialog = document.querySelector('#dialog');
@@ -398,19 +398,26 @@ dialog.addEventListener('close', () => {
   }
 });
 
-function stepViewer(step, autoplay = false) {
+function stepViewer(step) {
   if (!viewing || !dialog.open || editor.open) return;
   const item = adjacentItem(viewing.items, viewing.id, step);
-  if (item) showMedia(item, { autoplay });
+  if (item) showMedia(item);
 }
 
 dialog.addEventListener('keydown', event => {
-  if (!viewing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
-      event.target.closest('video, input, select, textarea')) return;
+  if (!viewing || editor.open || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+      event.target.closest('input, select, textarea, [contenteditable], .viewer-info[open]')) return;
+  const vertical = verticalKeyStep(event.key, event.keyCode);
+  if (vertical) {
+    event.preventDefault();
+    if (!event.repeat) stepViewer(vertical);
+    return;
+  }
+  if (event.target.closest('video')) return;
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
   event.preventDefault();
   stepViewer(event.key === 'ArrowLeft' ? -1 : 1);
-});
+}, { capture: true });
 
 function viewerDetails(item) {
   const collection = state.collections.find(entry => entry.id === item.collectionId);
@@ -421,27 +428,30 @@ function viewerDetails(item) {
       <button class="button quiet danger-text" type="button" data-action="trash-item" data-id="${item.id}">${icon('trash')} Move to trash</button></div>` : ''}`;
 }
 
-async function showMedia(item, { origin, fromDiscovery = false, autoplay = false } = {}) {
-  if (origin) viewing = { items: fromDiscovery ? discovery.items : visibleItems, origin, fromDiscovery, automatic: false,
-    scroll: { x: window.scrollX, y: window.scrollY } };
+async function showMedia(item, { origin, fromDiscovery = false } = {}) {
+  if (origin) {
+    const queue = fromDiscovery ? discovery.items : visibleItems;
+    viewing = { items: queue.filter(entry => entry.kind === item.kind), origin, fromDiscovery, automatic: false, muted: false,
+      scroll: { x: window.scrollX, y: window.scrollY } };
+  }
   viewing.id = item.id;
   viewing.syncAuto = null;
   const { items } = viewing;
   const position = items.findIndex(entry => entry.id === item.id);
-  if (viewing.fromDiscovery) discovery.index = position;
-  const autoButton = viewing.fromDiscovery && items.length > 1
+  if (viewing.fromDiscovery) discovery.index = discovery.items.findIndex(entry => entry.id === item.id);
+  const autoButton = items.length > 1
     ? `<button class="button quiet viewer-auto" type="button" data-action="viewer-auto" aria-pressed="${viewing.automatic}">Auto-next</button>` : '';
   const favouriteButton = isOwner() ? `<button class="icon-button viewer-favourite" type="button" data-action="favourite" data-id="${item.id}" aria-label="Favourite" title="Favourite" aria-pressed="${item.favourite}">${icon('heart')}</button>` : '';
   const focused = dialog.contains(document.activeElement) ? document.activeElement.dataset.action : null;
   openDialog(item.title, `
     <div id="viewer" class="viewer"><p role="status">Opening media…</p></div>
     <footer class="viewer-foot">
-      <button class="button secondary viewer-step" type="button" data-action="viewer-previous" ${position <= 0 ? 'disabled' : ''}>${icon('previous')} <span>Previous</span></button>
+      <button class="button secondary viewer-step" type="button" data-action="viewer-previous" aria-keyshortcuts="ArrowUp ArrowLeft" ${position <= 0 ? 'disabled' : ''}>${icon('previous')} <span>Previous</span></button>
       <div class="viewer-meta">
         <span>${position + 1} / ${items.length}</span>
         <details class="viewer-info"><summary>Details</summary><div class="viewer-detail-content">${viewerDetails(item)}</div></details>
       </div>
-      <button class="button secondary viewer-step" type="button" data-action="viewer-next" ${position === items.length - 1 ? 'disabled' : ''}><span>Next</span> ${icon('next')}</button>
+      <button class="button secondary viewer-step" type="button" data-action="viewer-next" aria-keyshortcuts="ArrowDown ArrowRight" ${position === items.length - 1 ? 'disabled' : ''}><span>Next</span> ${icon('next')}</button>
       <p class="viewer-message form-message" role="status"></p>
     </footer>`, 'media-dialog', autoButton + favouriteButton);
   const focusTarget = ['viewer-previous', 'viewer-next'].includes(focused)
@@ -450,7 +460,7 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
   const viewer = dialog.querySelector('#viewer');
   let touch;
   viewer.addEventListener('pointerdown', event => {
-    if (event.pointerType !== 'touch' || !event.isPrimary || event.target.closest('button')) return;
+    if (event.pointerType !== 'touch' || !event.isPrimary) return;
     const video = event.target.closest('video');
     if (video && event.clientY > video.getBoundingClientRect().bottom - 56) return;
     touch = { x: event.clientX, y: event.clientY };
@@ -474,6 +484,10 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
       element.controls = true;
       element.playsInline = true;
       element.preload = 'metadata';
+      element.muted = viewing.muted;
+      element.addEventListener('volumechange', () => {
+        if (viewing && element.isConnected) viewing.muted = element.muted;
+      });
       const play = document.createElement('button');
       play.className = 'viewer-play';
       play.type = 'button';
@@ -488,7 +502,7 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
       element.addEventListener('play', () => { play.hidden = true; });
       element.addEventListener('pause', () => { play.hidden = false; });
       element.addEventListener('ended', () => {
-        if (viewer.isConnected && viewing?.automatic) stepViewer(1, true);
+        if (viewer.isConnected && viewing?.automatic) stepViewer(1);
       });
       let refreshed = false;
       element.addEventListener('error', async () => {
@@ -517,7 +531,7 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
       let timer;
       const schedule = () => {
         clearTimeout(timer);
-        if (viewing?.automatic && !editor.open && element.naturalWidth) timer = setTimeout(() => stepViewer(1, true), 5000);
+        if (viewing?.automatic && !editor.open && element.naturalWidth) timer = setTimeout(() => stepViewer(1), 5000);
       };
       viewing.syncAuto = schedule;
       element.addEventListener('load', schedule, { once: true });
@@ -525,7 +539,15 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
       playerCleanup = () => clearTimeout(timer);
     }
     element.src = link.url;
-    if (autoplay && item.kind === 'video') element.play().catch(() => {});
+    if (item.kind === 'video') {
+      try { await element.play(); }
+      catch (error) {
+        if (error.name === 'NotAllowedError' && !element.muted && element.isConnected && dialog.open) {
+          element.muted = true;
+          await element.play().catch(() => {});
+        }
+      }
+    }
   } catch (error) {
     if (viewer.isConnected) setMessage(viewer, error.message);
   }

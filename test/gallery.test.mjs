@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { adjacentItem, buildGallery, shuffleMedia, swipeStep } from '../public/gallery.mjs';
+import { adjacentItem, buildGallery, shuffleMedia, swipeStep, verticalKeyStep } from '../public/gallery.mjs';
 
 const item = (id, title, kind, date, name = title) => ({ id, title, kind, name, created: Date.parse(date) });
 const media = [
@@ -26,11 +26,23 @@ test('filters find filenames as well as titles and the viewer follows the result
   assert.equal(adjacentItem(alphabetical.items, 'missing', 1), undefined);
 });
 
-test('a horizontal swipe moves one item and vertical gestures leave the viewer unchanged', () => {
+test('a swipe moves one item in either direction on both axes', () => {
   assert.equal(swipeStep(-86, 20), 1);
   assert.equal(swipeStep(88, -12), -1);
+  assert.equal(swipeStep(-18, -90), 1);
+  assert.equal(swipeStep(10, 90), -1);
   assert.equal(swipeStep(60, 70), 0);
   assert.equal(swipeStep(18, 0), 0);
+});
+
+test('TV remotes can send standard arrows, legacy names or numeric codes', () => {
+  assert.equal(verticalKeyStep('ArrowUp'), -1);
+  assert.equal(verticalKeyStep('ArrowDown'), 1);
+  assert.equal(verticalKeyStep('Up'), -1);
+  assert.equal(verticalKeyStep('Down'), 1);
+  assert.equal(verticalKeyStep('Unidentified', 38), -1);
+  assert.equal(verticalKeyStep('', 40), 1);
+  assert.equal(verticalKeyStep('ArrowRight'), 0);
 });
 
 test('gallery search finds words in media descriptions', () => {

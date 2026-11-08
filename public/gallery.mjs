@@ -26,8 +26,17 @@ export function adjacentItem(items, id, step) {
 }
 
 export function swipeStep(x, y) {
-  if (Math.abs(x) < 42 || Math.abs(x) < Math.abs(y) * 1.4) return 0;
-  return x < 0 ? 1 : -1;
+  const [distance, cross] = Math.abs(y) > Math.abs(x) ? [y, x] : [x, y];
+  if (Math.abs(distance) < 42 || Math.abs(distance) < Math.abs(cross) * 1.4) return 0;
+  return distance < 0 ? 1 : -1;
+}
+
+export function verticalKeyStep(key, keyCode) {
+  if (key === 'ArrowUp' || key === 'Up') return -1;
+  if (key === 'ArrowDown' || key === 'Down') return 1;
+  if (key && key !== 'Unidentified') return 0;
+  if (keyCode === 38) return -1;
+  return keyCode === 40 ? 1 : 0;
 }
 
 export function shuffleMedia(media, previousId, random = Math.random) {

@@ -13,8 +13,9 @@ The app uses built-in Node.js modules, SQLite, and local files. It starts with a
 
 ## Use the library
 
-- **Discover** opens a shuffled selection. Choose photos or videos, shuffle again, or open an item and enable **Auto-next** for continuous viewing through the current selection.
-- In **Library**, browse the date grid or search by title, description, or filename. Open an item and use Previous, Next, or the arrow keys to move through the selection.
+- **Discover** opens a shuffled selection. Choose **Videos** or **Photos** to shuffle each type separately. A collection viewer follows the order shown in that collection.
+- In the viewer, swipe up for the next item or down for the previous item. On a TV browser, use Down or Up on the remote. Videos start as you move between them, and photos have a separate queue. Turn on **Auto-next** to advance when a video ends or after five seconds on a photo.
+- In **Library**, browse the date grid or search by title, description, or filename. The viewer also supports Previous and Next buttons and the left and right arrow keys.
 - The owner can create and rename **Collections**. To change a title or description, or to move an item to a collection, open the item and choose **Details → Edit details**. Each item can be in one collection. Guests can browse shared collections and read descriptions.
 - The owner can tap the heart in the viewer to add or remove a media item from **Library → Favourites**. This list is private to the owner.
 - The owner can choose **Upload** in Library or **Manage → Uploads**. The queue shows progress per file. Choose the same file again to resume an interrupted upload after a reload or restart. **Manage** also opens storage, guest invitations, and Trash.
