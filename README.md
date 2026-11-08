@@ -39,6 +39,12 @@ npm run backup -- restore /path/to/existing-backup-folder
 
 The backup includes the originals currently in the library, their titles and descriptions, collection assignments, and the owner's favourites. Start the app after restoring to browse the recovered collection. Older media backups still restore. Owner credentials and guest invitations are managed separately from this media backup.
 
-## Cloud integration milestone
+## Hosted sign-in preview
 
-The local version uses separate access, catalog, and media storage modules. Connecting the hosted version requires a Supabase project for Auth and Postgres, a private Cloudflare R2 bucket for multipart uploads and media, and the target GitHub repository. Provider credentials belong in environment secrets. After integration, verify invited account access and revocation, direct uploads and video seeking, and recovery with a second account and a physical phone before using the hosted version for private originals.
+The [Stillroom preview](https://stillroom-pilot.zubaerahmed13.workers.dev/) supports owner setup, password sign-in, shared collections, and guest invitations and revocation. The owner activates their account through a one-use setup link. Returning guests use their existing hosted password when redeeming a fresh invitation.
+
+The Cloudflare Worker serves the same interface as the local app. Supabase Auth checks passwords. Postgres stores membership and checks each Stillroom session against the current invitation status. The bridge shared key belongs in a Worker secret, with its SHA-256 digest registered in the database and configured in the Supabase Edge Function. The Supabase service role key stays in the Edge Function. Use a dedicated Supabase project because the enrollment trigger enforces invitation-only creation on its Auth user table.
+
+Run `node hosted/bundle.mjs` to prepare the Worker modules and `npm test` for local tests. The rollback-only check in `supabase/tests/hosted_access.sql` requires an empty Stillroom project. It covers deferred enrollment, invitation reuse and expiry rules, the guest cap, and revocation.
+
+Hosted media transfer is paused. Enable it only after the private R2 integration enforces storage and request budgets and passes upload, playback, and recovery checks with synthetic files.

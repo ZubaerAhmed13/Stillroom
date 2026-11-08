@@ -4,8 +4,9 @@ const app = document.querySelector('#app');
 const dialog = document.querySelector('#dialog');
 const editor = document.querySelector('#editor');
 const notice = document.querySelector('#notice');
-const inviteToken = location.pathname === '/invite' ? location.hash.slice(1) : '';
-if (location.hash && location.pathname === '/invite') history.replaceState(null, '', '/invite');
+const entryMode = location.pathname === '/invite' ? 'redeem' : location.pathname === '/setup' ? 'setup' : 'login';
+const entryToken = entryMode === 'login' ? '' : location.hash.slice(1);
+if (entryToken) history.replaceState(null, '', location.pathname);
 
 const icons = {
   library: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
@@ -79,21 +80,26 @@ function bytes(size) {
 const date = value => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(value);
 const itemCount = count => count + (count === 1 ? ' item' : ' items');
 
-function signedOut(invitation = false) {
+function signedOut(mode = 'login') {
+  const invitation = mode === 'redeem';
+  const setup = mode === 'setup';
+  const activation = invitation || setup;
+  const heading = setup ? 'Set up your Stillroom account' : invitation ? 'Accept your invitation' : 'Sign in to Stillroom';
+  const description = setup ? 'Choose your owner email address and password.' : invitation ? 'Create a password to enter the library.' : 'Open your private photo and video library.';
   app.innerHTML = `
     <main id="main" class="entry">
       <section class="entry-fields" aria-labelledby="entry-title">
         ${brand}
         <span class="pill">${icon('lock')} Invitation only</span>
-        <h1 id="entry-title">${invitation ? 'Accept your invitation' : 'Sign in to Stillroom'}</h1>
-        <p>${invitation ? 'Create a password to enter the library.' : 'Open your private photo and video library.'}</p>
-        <form id="auth-form" data-invitation="${invitation}">
+        <h1 id="entry-title">${heading}</h1>
+        <p>${description}</p>
+        <form id="auth-form" data-mode="${mode}">
           ${invitation ? '' : '<label>Email address<input name="email" type="email" maxlength="254" required autocomplete="username" placeholder="you@example.com"></label>'}
-          <label>Password<input name="password" type="password" ${invitation ? 'minlength="12"' : ''} maxlength="128" required autocomplete="${invitation ? 'new-password' : 'current-password'}" placeholder="${invitation ? 'At least 12 characters' : 'Enter your password'}"></label>
+          <label>Password<input name="password" type="password" ${activation ? 'minlength="12"' : ''} maxlength="128" required autocomplete="${activation ? 'new-password' : 'current-password'}" placeholder="${activation ? 'At least 12 characters' : 'Enter your password'}"></label>
           <p class="form-message" role="status"></p>
-          <button class="button primary wide" type="submit">${invitation ? 'Join Stillroom' : 'Sign in'} ${icon('arrow')}</button>
+          <button class="button primary wide" type="submit">${setup ? 'Create owner account' : invitation ? 'Join Stillroom' : 'Sign in'} ${icon('arrow')}</button>
         </form>
-        ${invitation ? '<a class="quiet-link" href="/">Back to sign in</a>' : '<p class="entry-foot">Need access? Ask the library owner for an invitation.</p>'}
+        ${activation ? '<a class="quiet-link" href="/">Back to sign in</a>' : '<p class="entry-foot">Need access? Ask the library owner for an invitation.</p>'}
       </section>
     </main>`;
 }
@@ -183,7 +189,7 @@ function discoverPage() {
       <div class="discover-details"><div><h2>${escapeHtml(item.title)}</h2><p>${discovery.index + 1} of ${discovery.items.length}</p></div>
         <div class="discover-steps"><button class="icon-button" type="button" data-action="discover-previous" aria-label="Previous discovery item" ${discovery.index === 0 ? 'disabled' : ''}>${icon('previous')}</button>
         <button class="icon-button" type="button" data-action="discover-next" aria-label="Next discovery item" ${discovery.index === discovery.items.length - 1 ? 'disabled' : ''}>${icon('next')}</button></div>
-      </div></div>` : `<div class="empty"><div class="empty-icon">${icon('photo')}</div><h2>${state.items.length ? 'No media in this filter' : 'Nothing to discover yet'}</h2><p>${state.items.length ? 'Choose another media type.' : 'Shared photos and videos will appear here.'}</p>${isOwner() && !state.items.length ? '<button class="button primary" type="button" data-action="upload">Upload media</button>' : ''}</div>`}
+      </div></div>` : `<div class="empty"><div class="empty-icon">${icon('photo')}</div><h2>${state.items.length ? 'No media in this filter' : 'Nothing to discover yet'}</h2><p>${state.items.length ? 'Choose another media type.' : 'Shared photos and videos will appear here.'}</p>${isOwner() && !state.items.length && !state.owner?.mediaPaused ? '<button class="button primary" type="button" data-action="upload">Upload media</button>' : ''}</div>`}
   </section>`;
 }
 
@@ -234,7 +240,7 @@ function libraryPage() {
   const interrupted = owner?.pending.length || 0;
   const usage = owner?.usage;
   let actions = '';
-  if (owner && state.shelf === 'all') actions = `<button class="button secondary storage-link${usage.total >= usage.limit * 0.8 ? ' near-limit' : ''}" type="button" data-action="nav" data-id="manage" aria-label="Manage storage, ${bytes(usage.available)} available">${bytes(usage.total)} / ${bytes(usage.limit)}</button><button class="button primary" type="button" data-action="upload">${icon('up')} Upload</button>`;
+  if (owner && state.shelf === 'all') actions = `<button class="button secondary storage-link${usage.total >= usage.limit * 0.8 ? ' near-limit' : ''}" type="button" data-action="nav" data-id="manage" aria-label="Manage storage, ${bytes(usage.available)} available">${bytes(usage.total)} / ${bytes(usage.limit)}</button>${owner.mediaPaused ? '' : `<button class="button primary" type="button" data-action="upload">${icon('up')} Upload</button>`}`;
   if (owner && browsing) actions = `<button class="button primary" type="button" data-action="collection-edit">${icon('plus')} New collection</button>`;
   if (owner && collection) actions = `<button class="button secondary" type="button" data-action="collection-edit" data-id="${collection.id}">${icon('edit')} Rename collection</button>`;
   return `
@@ -262,7 +268,7 @@ function libraryPage() {
 }
 
 function managePage() {
-  const { used, limit, pending, trash, usage } = state.owner;
+  const { used, limit, pending, trash, usage, mediaPaused } = state.owner;
   const links = [
     ['nav', 'invites', 'users', 'Invitations', used + ' of ' + limit + ' guest slots used'],
     ['upload', '', 'up', 'Uploads', pending.length ? pending.length + ' interrupted' : 'Ready for new files'],
@@ -271,7 +277,8 @@ function managePage() {
   return `
     <section class="page-head"><h1 tabindex="-1">Manage</h1><p>Storage, uploads, and guest access.</p></section>
     ${storageMeter(usage)}
-    <div class="manage-grid">${links.map(([action, id, image, title, detail]) => `
+    ${mediaPaused ? '<p class="capacity-warning" role="status">Hosted uploads and playback are paused while storage safeguards are being verified.</p>' : ''}
+    <div class="manage-grid">${links.filter(([action]) => !mediaPaused || action !== 'upload').map(([action, id, image, title, detail]) => `
       <button class="manage-card" type="button" data-action="${action}" data-id="${id}">
         <span class="list-icon">${icon(image)}</span><span><strong>${title}</strong><small>${detail}</small></span>${icon('arrow')}
       </button>`).join('')}</div>`;
@@ -291,7 +298,7 @@ function drawGallery() {
     let message = 'Try a different search or filter.';
     if (empty && all) message = isOwner() ? 'Add a photo or video to get started.' : 'Shared photos and videos will appear here.';
     if (empty && !all) message = favourites ? 'Open any item and tap the heart to save it here.' : (isOwner() ? 'Open a photo or video, then choose Details and Edit details to move it here.' : 'Shared photos and videos will appear here.');
-    gallery.innerHTML = `<div class="empty"><div class="empty-icon">${icon(favourites ? 'heart' : 'photo')}</div><h3>${empty ? (favourites ? 'No favourites yet' : 'No media yet') : 'No matching media'}</h3><p>${message}</p>${empty && all && isOwner() ? '<button type="button" class="button secondary" data-action="upload">Add your first file</button>' : ''}</div>`;
+    gallery.innerHTML = `<div class="empty"><div class="empty-icon">${icon(favourites ? 'heart' : 'photo')}</div><h3>${empty ? (favourites ? 'No favourites yet' : 'No media yet') : 'No matching media'}</h3><p>${message}</p>${empty && all && isOwner() && !state.owner?.mediaPaused ? '<button type="button" class="button secondary" data-action="upload">Add your first file</button>' : ''}</div>`;
     return;
   }
   gallery.innerHTML = sections.map(section => `<section class="gallery-section">
@@ -765,13 +772,14 @@ document.addEventListener('submit', async event => {
   setMessage(message, '');
   try {
     if (form.id === 'auth-form') {
-      const accepting = form.dataset.invitation === 'true';
-      const body = accepting ? { token: inviteToken, password: fields.get('password') } : { email: fields.get('email'), password: fields.get('password') };
-      const { user } = await request('/api/auth/' + (accepting ? 'redeem' : 'login'), { method: 'POST', body });
+      const mode = form.dataset.mode;
+      const body = { email: fields.get('email'), password: fields.get('password') };
+      if (mode !== 'login') body.token = entryToken;
+      const { user } = await request('/api/auth/' + mode, { method: 'POST', body });
       state.user = user;
       state.view = 'discover';
       state.shelf = 'all';
-      if (accepting) history.replaceState(null, '', '/');
+      if (mode !== 'login') history.replaceState(null, '', '/');
     } else {
       state.invite = await request('/api/invites', { method: 'POST', body: { email: fields.get('email') } });
       flash('Invitation link created.');
@@ -821,7 +829,7 @@ document.addEventListener('click', async event => {
     (control || document.querySelector('[data-action="discover-open"]'))?.focus({ preventScroll: true });
     return;
   }
-  if (action === 'upload') return showUpload();
+  if (action === 'upload' && !state.owner?.mediaPaused) return showUpload();
   if (action === 'pause') return activeUpload?.abort();
   if (action === 'close') return closeDialog();
   if (action === 'viewer-previous') return stepViewer(-1);
@@ -931,8 +939,8 @@ document.addEventListener('change', event => {
 });
 
 try {
-  if (inviteToken) {
-    signedOut(true);
+  if (entryToken) {
+    signedOut(entryMode);
   } else {
     const session = await request('/api/session');
     state.user = session.user;
