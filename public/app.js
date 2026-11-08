@@ -512,7 +512,7 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
   const { items } = viewing;
   const position = items.findIndex(entry => entry.id === item.id);
   if (viewing.fromDiscovery) discovery.index = discovery.items.findIndex(entry => entry.id === item.id);
-  const autoButton = items.length > 1
+  const autoButton = item.kind === 'photo' && items.length > 1
     ? `<button class="button quiet viewer-auto" type="button" data-action="viewer-auto" aria-pressed="${viewing.automatic}">Auto-next</button>` : '';
   const favouriteButton = isOwner() ? `<button class="icon-button viewer-favourite" type="button" data-action="favourite" data-id="${item.id}" aria-label="Favourite" title="Favourite" aria-pressed="${item.favourite}">${icon('heart')}</button>` : '';
   const focused = dialog.contains(document.activeElement) ? document.activeElement.dataset.action : null;
@@ -556,6 +556,7 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
     if (item.kind === 'video') {
       element.controls = true;
       element.playsInline = true;
+      element.loop = true;
       element.preload = 'metadata';
       element.muted = viewing.muted;
       element.addEventListener('volumechange', () => {
@@ -574,9 +575,6 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
       });
       element.addEventListener('play', () => { play.hidden = true; });
       element.addEventListener('pause', () => { play.hidden = false; });
-      element.addEventListener('ended', () => {
-        if (viewer.isConnected && viewing?.automatic) stepViewer(1);
-      });
       let refreshed = false;
       element.addEventListener('error', async () => {
         if (!element.isConnected || !dialog.open) return;
