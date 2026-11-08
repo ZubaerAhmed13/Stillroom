@@ -40,7 +40,6 @@ const state = { user: null, items: [], collections: [], owner: null, view: 'disc
 let activeUpload = null;
 let uploadQueue = [];
 let noticeTimer;
-let galleryRevision = 0;
 let visibleItems = [];
 let discovery = { kind: 'all', items: [], index: 0 };
 let viewing = null;
@@ -201,7 +200,7 @@ function discoverPage() {
 
 function cover(item, showKind = true) {
   if (!item) return `<span class="card-cover">${icon('collection')}</span>`;
-  return `<span class="card-cover ${item.kind}">${icon(item.kind === 'video' ? 'play' : 'photo')}${item.kind === 'photo' ? `<img alt="" data-thumb="${item.id}" hidden>` : ''}${showKind ? `<span class="kind">${item.kind === 'video' ? 'Video' : 'Photo'}</span>` : ''}</span>`;
+  return `<span class="card-cover ${item.kind}">${icon(item.kind === 'video' ? 'play' : 'photo')}<canvas data-thumb="${item.id}" aria-hidden="true" hidden></canvas>${showKind ? `<span class="kind">${item.kind === 'video' ? 'Video' : 'Photo'}</span>` : ''}</span>`;
 }
 
 function shelfItems() {
@@ -297,7 +296,7 @@ function drawGallery() {
   const { items, sections } = buildGallery(source, state);
   visibleItems = items;
   if (!items.length) {
-    thumbnailObserver?.disconnect();
+    stopThumbnails();
     const empty = !source.length;
     const all = state.shelf === 'all';
     const favourites = state.shelf === 'favourites';
@@ -317,35 +316,109 @@ function drawGallery() {
   observeThumbnails(gallery);
 }
 
-function observeThumbnails(container) {
+let thumbnailObserver;
+let thumbnailLoading;
+const thumbnailFrames = new Map();
+
+function stopThumbnails() {
   thumbnailObserver?.disconnect();
-  const revision = ++galleryRevision;
-  const images = [...container.querySelectorAll('[data-thumb]')];
-  const load = async image => {
-    if (revision !== galleryRevision || !image.isConnected) return;
+  thumbnailLoading?.abort();
+  thumbnailObserver = thumbnailLoading = null;
+}
+
+function waitForThumbnail(source, url, event, signal) {
+  return new Promise((resolve, reject) => {
+    function finish(loaded) {
+      clearTimeout(timer);
+      source.removeEventListener(event, ready);
+      source.removeEventListener('error', failed);
+      signal.removeEventListener('abort', failed);
+      if (loaded) resolve();
+      else reject(new Error('Preview unavailable.'));
+    }
+    const ready = () => finish(true);
+    const failed = () => finish(false);
+    const timer = setTimeout(failed, 8000);
+    if (signal.aborted) return failed();
+    source.addEventListener(event, ready);
+    source.addEventListener('error', failed);
+    signal.addEventListener('abort', failed);
+    source.src = url;
+  });
+}
+
+async function drawThumbnail(canvas, signal) {
+  const id = canvas.dataset.thumb;
+  const video = canvas.parentElement.classList.contains('video');
+  let frame = thumbnailFrames.get(id);
+  if (!frame) {
+    const { url } = await request('/api/media/' + id + '/link', { signal });
+    const source = document.createElement(video ? 'video' : 'img');
+    if (video) {
+      source.preload = 'auto';
+      source.muted = source.playsInline = true;
+    }
     try {
-      const { url } = await request('/api/media/' + image.dataset.thumb + '/link');
-      if (revision !== galleryRevision || !image.isConnected) return;
-      image.addEventListener('load', () => { image.hidden = false; }, { once: true });
-      image.src = url;
-    } catch { /* the media card still opens and can show its error */ }
-  };
-  if (!images.length) return;
+      await waitForThumbnail(source, url, video ? 'loadeddata' : 'load', signal);
+      if (signal.aborted || !canvas.isConnected) return;
+      const width = video ? source.videoWidth : source.naturalWidth;
+      const height = video ? source.videoHeight : source.naturalHeight;
+      if (!width || !height) return;
+      const scale = Math.min(1, 384 / Math.max(width, height));
+      frame = document.createElement('canvas');
+      frame.width = Math.max(1, Math.round(width * scale));
+      frame.height = Math.max(1, Math.round(height * scale));
+      frame.getContext('2d').drawImage(source, 0, 0, frame.width, frame.height);
+    } finally {
+      source.removeAttribute('src');
+      if (video) source.load();
+    }
+  }
+  if (signal.aborted || !canvas.isConnected) return;
+  thumbnailFrames.delete(id);
+  thumbnailFrames.set(id, frame);
+  if (thumbnailFrames.size > 32) thumbnailFrames.delete(thumbnailFrames.keys().next().value);
+  canvas.width = frame.width;
+  canvas.height = frame.height;
+  canvas.getContext('2d').drawImage(frame, 0, 0);
+  canvas.hidden = false;
+}
+
+function observeThumbnails(container) {
+  stopThumbnails();
+  const tiles = [...container.querySelectorAll('[data-thumb]')];
+  if (!tiles.length) return;
+  thumbnailLoading = new AbortController();
+  const { signal } = thumbnailLoading;
+  const pending = new Set();
+  let active = 0;
+  function loadVisible() {
+    while (!signal.aborted && active < 2 && pending.size) {
+      const tile = pending.values().next().value;
+      pending.delete(tile);
+      thumbnailObserver?.unobserve(tile.parentElement);
+      active++;
+      drawThumbnail(tile, signal).catch(() => { /* the viewer can still open the original */ }).finally(() => {
+        active--;
+        loadVisible();
+      });
+    }
+  }
   if (!('IntersectionObserver' in window)) {
-    images.forEach(load);
+    tiles.forEach(tile => pending.add(tile));
+    loadVisible();
     return;
   }
   thumbnailObserver = new IntersectionObserver(entries => {
     for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      thumbnailObserver.unobserve(entry.target);
-      load(entry.target.querySelector('[data-thumb]'));
+      const tile = entry.target.querySelector('[data-thumb]');
+      if (entry.isIntersecting) pending.add(tile);
+      else pending.delete(tile);
     }
-  }, { rootMargin: '150px' });
-  images.forEach(image => thumbnailObserver.observe(image.parentElement));
+    loadVisible();
+  }, { rootMargin: '100px' });
+  tiles.forEach(tile => thumbnailObserver.observe(tile.parentElement));
 }
-
-let thumbnailObserver;
 
 function invitesPage() {
   const { used, limit, invites } = state.owner;
@@ -902,6 +975,8 @@ document.addEventListener('click', async event => {
   try {
     if (action === 'logout') {
       await request('/api/auth/logout', { method: 'POST' });
+      stopThumbnails();
+      thumbnailFrames.clear();
       state.user = state.owner = state.invite = null;
       state.items = [];
       state.collections = [];

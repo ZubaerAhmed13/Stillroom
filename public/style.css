@@ -128,7 +128,7 @@ progress::-moz-progress-bar { background: var(--mint); border-radius: 999px; }
 .card-cover { display: grid; position: relative; isolation: isolate; aspect-ratio: 4/3; overflow: hidden; place-items: center; color: #c6d1dc; background: radial-gradient(ellipse at 62% 15%, #303a49, #1a202b 76%); }
 .card-cover.video { background: radial-gradient(ellipse at 65% 18%, #384251, #1b202a 76%); }
 .card-cover > svg { width: 32px; height: 32px; }
-.card-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.card-cover canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .kind { position: absolute; left: 7px; top: 7px; padding: 4px 6px; border-radius: 5px; color: white; background: #101114dc; font-size: 10px; }
 .card-details { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 7px 9px 8px; }
 .card-details strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
