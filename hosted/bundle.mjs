@@ -11,7 +11,7 @@ const assets = {};
 for (const [filename, type] of Object.entries(contentTypes)) {
   assets['/' + filename] = { type, body: await readFile(new URL('../public/' + filename, import.meta.url), 'utf8') };
 }
-const entrypoint = `import worker from './worker.mjs';
+const entrypoint = `import worker from './hosted/worker.mjs';
 const files = ${JSON.stringify(assets)};
 const ASSETS = {
   fetch(request) {
@@ -24,7 +24,7 @@ const ASSETS = {
 };
 export default { fetch(request, env) { return worker.fetch(request, {...env, ASSETS}); } };
 `;
-console.log(JSON.stringify({
-  'index.mjs': entrypoint,
-  'worker.mjs': await readFile(new URL('worker.mjs', import.meta.url), 'utf8')
-}));
+const modules = ['hosted/worker.mjs', 'hosted/storage.mjs', 'media-format.mjs', 'http.mjs'];
+const source = await Promise.all(modules.map(async name =>
+  [name, await readFile(new URL('../' + name, import.meta.url), 'utf8')]));
+console.log(JSON.stringify({ 'index.mjs': entrypoint, ...Object.fromEntries(source) }));

@@ -147,13 +147,19 @@ function render() {
   else observeThumbnails(app);
 }
 
-function storageMeter({ limit, total, available, ready, trash, reserved }) {
+function storageMeter({ limit, total, available, ready, trash, reserved }, operations) {
   const nearLimit = total >= limit * 0.8;
+  const activity = operations && [
+    ['R2 writes', operations.writes, operations.writeLimit], ['R2 reads', operations.reads, operations.readLimit]
+  ];
+  const format = new Intl.NumberFormat();
   return `<section class="storage${nearLimit ? ' near-limit' : ''}" aria-labelledby="storage-title">
     <div><h3 id="storage-title">Free-tier protection</h3><strong>${bytes(total)} / ${bytes(limit)}</strong></div>
     <progress max="${limit}" value="${Math.min(total, limit)}" aria-label="Storage used and reserved"></progress>
     <p>${available ? bytes(available) + ' available' : 'At limit. New uploads are blocked.'}</p>
     <dl class="storage-breakdown"><div><dt>Library</dt><dd>${bytes(ready)}</dd></div><div><dt>Trash</dt><dd>${bytes(trash)}</dd></div><div><dt>Reserved for uploads</dt><dd>${bytes(reserved)}</dd></div></dl>
+    ${activity ? `<p>R2 requests · last 32 days</p><dl class="storage-breakdown">${activity.map(([label, count, cap]) =>
+      `<div><dt>${label}</dt><dd>${format.format(count)} / ${format.format(cap)}${count >= cap ? ' · Paused' : count >= cap * 0.8 ? ' · Near limit' : ''}</dd></div>`).join('')}</dl>` : ''}
   </section>`;
 }
 
@@ -268,7 +274,7 @@ function libraryPage() {
 }
 
 function managePage() {
-  const { used, limit, pending, trash, usage, mediaPaused } = state.owner;
+  const { used, limit, pending, trash, usage, operations, mediaPaused } = state.owner;
   const links = [
     ['nav', 'invites', 'users', 'Invitations', used + ' of ' + limit + ' guest slots used'],
     ['upload', '', 'up', 'Uploads', pending.length ? pending.length + ' interrupted' : 'Ready for new files'],
@@ -276,7 +282,7 @@ function managePage() {
   ];
   return `
     <section class="page-head"><h1 tabindex="-1">Manage</h1><p>Storage, uploads, and guest access.</p></section>
-    ${storageMeter(usage)}
+    ${storageMeter(usage, operations)}
     ${mediaPaused ? '<p class="capacity-warning" role="status">Hosted uploads and playback are paused while storage safeguards are being verified.</p>' : ''}
     <div class="manage-grid">${links.filter(([action]) => !mediaPaused || action !== 'upload').map(([action, id, image, title, detail]) => `
       <button class="manage-card" type="button" data-action="${action}" data-id="${id}">
@@ -487,7 +493,7 @@ async function showMedia(item, { origin, fromDiscovery = false, autoplay = false
       let refreshed = false;
       element.addEventListener('error', async () => {
         if (!element.isConnected || !dialog.open) return;
-        if (!refreshed || expires <= Date.now() + 5000) {
+        if (!refreshed || (Number.isFinite(expires) && expires <= Date.now() + 5000)) {
           refreshed = true;
           const time = element.currentTime;
           try {
@@ -681,7 +687,20 @@ function drawPendingUploads() {
     <button class="button quiet" type="button" data-action="discard-upload" data-id="${item.id}">Cancel upload</button></li>`).join('')}</ul>` : '';
 }
 
-async function fingerprint(file) {
+async function fingerprint(file, signal) {
+  if (state.owner.operations) {
+    const chunkSize = 8 * 1024 * 1024;
+    const hashes = new Uint8Array(Math.ceil(file.size / chunkSize) * 32);
+    for (let offset = 0, index = 0; offset < file.size; offset += chunkSize, index++) {
+      signal.throwIfAborted();
+      const part = await file.slice(offset, offset + chunkSize).arrayBuffer();
+      const hash = await crypto.subtle.digest('SHA-256', part);
+      hashes.set(new Uint8Array(hash), index * 32);
+    }
+    signal.throwIfAborted();
+    const hash = await crypto.subtle.digest('SHA-256', hashes);
+    return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
   const sampleSize = 65536;
   const sample = new Blob([
     file.slice(0, sampleSize), file.slice(Math.max(0, file.size - sampleSize)),
@@ -716,7 +735,7 @@ async function uploadFiles() {
       updateFile(index, 'Preparing');
       const mime = fileTypes[file.name.split('.').pop().toLowerCase()];
       if (!mime) throw new Error('Unsupported format: ' + file.name);
-      const hash = await fingerprint(file);
+      const hash = await fingerprint(file, signal);
       const upload = await request('/api/uploads', { method: 'POST', signal, body: { name: file.name, title, mime, size: file.size, fingerprint: hash } });
       let offset = upload.offset;
       while (offset < file.size) {

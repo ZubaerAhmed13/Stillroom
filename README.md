@@ -47,4 +47,10 @@ The Cloudflare Worker serves the same interface as the local app. Supabase Auth 
 
 Run `node hosted/bundle.mjs` to prepare the Worker modules and `npm test` for local tests. The rollback-only check in `supabase/tests/hosted_access.sql` requires an empty Stillroom project. It covers deferred enrollment, invitation reuse and expiry rules, the guest cap, and revocation.
 
-Hosted media transfer is paused. Enable it only after the private R2 integration enforces storage and request budgets and passes upload, playback, and recovery checks with synthetic files.
+## Private R2 media pilot
+
+Hosted transfer requires the private Standard R2 bucket as the Worker’s `MEDIA` binding and `STILLROOM_MEDIA_ENABLED=true`. Keep the switch off until the database migration is applied, the account-wide billing settings are checked, and the pilot is ready for synthetic files.
+
+Postgres reserves each file’s full size before the Worker sends a part to R2. Published files, Trash and unfinished uploads share the 9 GB limit. Cleanup releases a reservation only after R2 confirms deletion. The Worker uses 8 MiB parts, and the browser checks the full file before reusing an upload reservation. Playback uses the current Stillroom session for every request, including video seeks.
+
+Manage shows the storage total and the rolling request counters. The caps are 100,000 Class A attempts and 1,000,000 Class B attempts over the previous 32 days, rounded conservatively to the hour. Stillroom tracks calls it initiates. Check account-wide usage separately for other bucket or direct API activity. Run `supabase/tests/private_media.sql` against an empty media catalog with an owner configured to check the ledger with temporary lower caps. The check rolls back its fixtures and does not write to R2.

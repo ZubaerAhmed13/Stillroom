@@ -1,11 +1,11 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
-import { formats, hasMediaSignature, parseRange } from './local-media.mjs';
+import { hasMediaSignature, parseRange, MAX_FILE, uploadDetails } from './media-format.mjs';
 import { HttpError, readBody } from './http.mjs';
 import { atomic, listCollections } from './catalog.mjs';
 import { FREE_STORAGE_LIMIT, requireStorageCapacity, storageUsage } from './storage-budget.mjs';
 
-export const MAX_FILE = 4 * 1024 ** 3;
+export { MAX_FILE } from './media-format.mjs';
 export const MEDIA_ID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const LINK_DURATION = 15 * 60 * 1000;
 
@@ -24,24 +24,6 @@ export function collectionName(value) {
     throw new HttpError(400, 'Enter a collection name of up to 80 characters.');
   }
   return name;
-}
-
-function uploadDetails(body) {
-  const name = typeof body.name === 'string' ? body.name.replace(/[\x00-\x1f\x7f]/g, '').trim() : '';
-  if (!name || name.length > 255 || /[/\\]/.test(name)) throw new HttpError(400, 'Enter a valid file name.');
-  const ext = name.split('.').pop().toLowerCase();
-  if (!Object.hasOwn(formats, body.mime) || !formats[body.mime].includes(ext)) {
-    throw new HttpError(415, 'Choose a JPG, PNG, WebP, GIF, MP4 or WebM file.');
-  }
-  if (!Number.isSafeInteger(body.size) || body.size <= 0 || body.size > MAX_FILE) {
-    throw new HttpError(400, 'Choose a file between 1 byte and 4 GiB.');
-  }
-  if (typeof body.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(body.fingerprint)) {
-    throw new HttpError(400, 'The upload fingerprint is invalid.');
-  }
-  const title = typeof body.title === 'string' ? body.title.trim() : '';
-  if (title.length > 120 || /[\x00-\x1f\x7f]/.test(title)) throw new HttpError(400, 'Use a title of up to 120 characters.');
-  return { name, title: title || name.slice(0, -(ext.length + 1)).slice(0, 120) || name, mime: body.mime, size: body.size, fingerprint: body.fingerprint };
 }
 
 export function openMedia(db, blobs, { chunkSize, now, storageLimit = FREE_STORAGE_LIMIT }) {

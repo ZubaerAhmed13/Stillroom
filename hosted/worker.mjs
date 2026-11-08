@@ -1,3 +1,6 @@
+import { HttpError } from '../http.mjs';
+import { serveStorage } from './storage.mjs';
+
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 const idPattern = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const cookieName = '__Host-stillroom';
@@ -78,6 +81,7 @@ export function createHostedWorker(transport = fetch) {
         const url = new URL(request.url);
         const { pathname } = url;
         const { method } = request;
+        const mediaEnabled = env.STILLROOM_MEDIA_ENABLED === 'true' && !!env.MEDIA;
         if (url.origin !== env.STILLROOM_ORIGIN) throw new RequestError(404, 'Page not found.');
         if (['GET', 'HEAD'].includes(method) && pages.has(pathname)) {
           const asset = await env.ASSETS.fetch(new Request(new URL('/' + pages.get(pathname), url), { method }));
@@ -85,7 +89,7 @@ export function createHostedWorker(transport = fetch) {
           for (const [key, value] of Object.entries(headers)) result.headers.set(key, value);
           return result;
         }
-        if (pathname === '/healthz' && method === 'GET') return json({ phase: 'sign-in-preview', mediaEnabled: false });
+        if (pathname === '/healthz' && method === 'GET') return json({ phase: mediaEnabled ? 'media-pilot' : 'sign-in-preview', mediaEnabled });
         if (!pathname.startsWith('/api/')) throw new RequestError(404, 'Page not found.');
         if (!['GET', 'HEAD'].includes(method) && (request.headers.get('origin') !== url.origin ||
             ![null, 'same-origin'].includes(request.headers.get('sec-fetch-site')))) {
@@ -124,7 +128,11 @@ export function createHostedWorker(transport = fetch) {
 
         if (!session) throw new RequestError(401, 'Sign in to continue.');
         if (pathname === '/api/media' && method === 'GET') return json(await call('media'));
-        if (pathname === '/api/owner' && method === 'GET') return json(await call('owner'));
+        if (pathname === '/api/owner' && method === 'GET') {
+          const owner = await call('owner');
+          if (!mediaEnabled) return json(owner);
+          return json({ ...owner, ...await call('storage_status'), mediaPaused: false });
+        }
         if (pathname === '/api/invites' && method === 'POST') return json(await call('invite', await readData(request)), 201);
         if (pathname === '/api/collections' && method === 'POST') return json(await call('create_collection', await readData(request)), 201);
         const [, , resource, id, subresource] = pathname.split('/');
@@ -134,12 +142,14 @@ export function createHostedWorker(transport = fetch) {
           if (resource === 'media' && method === 'PATCH') return json(await call('edit_media', { ...(await readData(request)), id }));
         }
         if (/^\/api\/(uploads(?:\/|$)|media\/)/.test(pathname)) {
+          if (mediaEnabled) return await serveStorage(request, url, env.MEDIA, call, { readData, json, headers });
           await call(method === 'GET' || method === 'HEAD' ? 'require_member' : 'require_owner');
           throw new RequestError(503, 'Hosted media transfer is paused while the storage safeguards are being verified.', 'media_paused');
         }
         throw new RequestError(404, 'Page not found.');
       } catch (error) {
         if (error instanceof RequestError) return json({ error: error.message, code: error.code }, error.status);
+        if (error instanceof HttpError) return json({ error: error.message, ...error.details }, error.status);
         return json({ error: 'Stillroom is temporarily unavailable. Try again shortly.' }, 503);
       }
     }

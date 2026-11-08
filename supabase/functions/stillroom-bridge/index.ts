@@ -7,9 +7,11 @@ const expectedBridgeDigest = Deno.env.get('STILLROOM_BRIDGE_SHA256') || '__STILL
 
 class BridgeError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -67,7 +69,8 @@ Deno.serve(async request => {
     }
 
     async function dispatch(command: string, input = data) {
-      const response = await fetch(url + '/rest/v1/rpc/stillroom_dispatch', {
+      const rpc = command.startsWith('storage_') ? 'stillroom_storage' : 'stillroom_dispatch';
+      const response = await fetch(url + '/rest/v1/rpc/' + rpc, {
         method: 'POST',
         headers: { apikey: serviceKey, authorization: 'Bearer ' + serviceKey, 'content-type': 'application/json' },
         body: JSON.stringify({ p_bridge: bridge, p_session: session, p_action: command, p_data: input }),
@@ -76,7 +79,8 @@ Deno.serve(async request => {
       const result = await response.json();
       if (!response.ok) {
         if (response.status >= 400 && response.status < 500 && result.code === 'PT' + response.status) {
-          throw new BridgeError(response.status, result.message);
+          const code = ['storage_limit', 'r2_read_limit', 'r2_write_limit'].includes(result.details) ? result.details : undefined;
+          throw new BridgeError(response.status, result.message, code);
         }
         throw new BridgeError(503, 'Stillroom is temporarily unavailable.');
       }
@@ -138,12 +142,15 @@ Deno.serve(async request => {
     }
 
     const commands = new Set(['session', 'logout', 'require_member', 'require_owner', 'media', 'owner', 'invite',
-      'revoke', 'create_collection', 'rename_collection', 'edit_media']);
+      'revoke', 'create_collection', 'rename_collection', 'edit_media', 'storage_status', 'storage_lookup',
+      'storage_read', 'storage_reserve', 'storage_part', 'storage_reject_part', 'storage_save_multipart',
+      'storage_save_part', 'storage_finish', 'storage_complete_budget', 'storage_release', 'storage_publish',
+      'storage_trash', 'storage_restore', 'storage_remove', 'storage_removed']);
     if (!commands.has(action)) return json({ error: 'Page not found.' }, 404);
     const result = await dispatch(action, action === 'invite' ? { email: data.email, token: randomToken() } : data);
     return json(result);
   } catch (error) {
-    if (error instanceof BridgeError) return json({ error: error.message }, error.status);
+    if (error instanceof BridgeError) return json({ error: error.message, code: error.code }, error.status);
     return json({ error: 'Stillroom is temporarily unavailable.' }, 503);
   }
 });
