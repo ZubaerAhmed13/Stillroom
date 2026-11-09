@@ -26,6 +26,10 @@ const icons = {
   photo: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="15.5" cy="8.5" r="1.5"/><path d="m3 17 5-6 4 4 2-2 7 6"/>',
   video: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3V9Z"/>',
   play: '<path d="m9 5 11 7-11 7V5Z" fill="currentColor" stroke="none"/>',
+  pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+  volume: '<path d="M11 5 6 9H3v6h3l5 4V5Zm4 4a5 5 0 0 1 0 6m3-9a9 9 0 0 1 0 12"/>',
+  mute: '<path d="M11 5 6 9H3v6h3l5 4V5Zm4 4 6 6m0-6-6 6"/>',
+  expand: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
   exit: '<path d="M11 4H4v16h7m-1-8h11m-4-4 4 4-4 4"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
   arrow: '<path d="M4 12h15m-6-6 6 6-6 6"/>',
@@ -477,6 +481,29 @@ function stepViewer(step) {
   if (item) showMedia(item);
 }
 
+function toggleViewerPlayback() {
+  const video = dialog.querySelector('#viewer video');
+  if (!video) return;
+  if (video.paused) video.play().catch(() => flash('Press Play to begin playback on this device.'));
+  else video.pause();
+}
+function syncViewerControls(video) {
+  if (!video?.isConnected) return;
+  const playback = dialog.querySelector('[data-action="viewer-toggle"]');
+  if (playback) {
+    playback.innerHTML = icon(video.paused ? 'play' : 'pause') + (video.paused ? ' Play' : ' Pause');
+    playback.setAttribute('aria-label', video.paused ? 'Play video' : 'Pause video');
+  }
+  const sound = dialog.querySelector('[data-action="viewer-mute"]');
+  if (sound) {
+    sound.innerHTML = icon(video.muted ? 'mute' : 'volume') + (video.muted ? ' Unmute' : ' Sound');
+    sound.setAttribute('aria-label', video.muted ? 'Unmute video' : 'Mute video');
+  }
+}
+document.addEventListener('fullscreenchange', () => {
+  const button = dialog.querySelector('[data-action="viewer-fullscreen"]');
+  if (button) button.innerHTML = icon('expand') + (document.fullscreenElement ? ' Exit full screen' : ' Full screen');
+});
 dialog.addEventListener('keydown', event => {
   if (!viewing || editor.open || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
       event.target.closest('input, select, textarea, [contenteditable], .viewer-info[open]')) return;
@@ -484,6 +511,20 @@ dialog.addEventListener('keydown', event => {
   if (vertical) {
     event.preventDefault();
     if (!event.repeat) stepViewer(vertical);
+    return;
+  }
+  if (['MediaPlayPause', 'MediaPlay', 'MediaPause'].includes(event.key)) {
+    event.preventDefault();
+    const video = dialog.querySelector('#viewer video');
+    if (video && (event.key === 'MediaPlayPause' || (event.key === 'MediaPlay' && video.paused) ||
+        (event.key === 'MediaPause' && !video.paused))) toggleViewerPlayback();
+    return;
+  }
+  if ([' ', 'Enter', 'Select', 'OK'].includes(event.key) && !event.target.closest('button, summary, a, video')) {
+    if (dialog.querySelector('#viewer video')) {
+      event.preventDefault();
+      toggleViewerPlayback();
+    }
     return;
   }
   if (event.target.closest('video')) return;
@@ -517,19 +558,35 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
   const favouriteButton = isOwner() ? `<button class="icon-button viewer-favourite" type="button" data-action="favourite" data-id="${item.id}" aria-label="Favourite" title="Favourite" aria-pressed="${item.favourite}">${icon('heart')}</button>` : '';
   const focused = dialog.contains(document.activeElement) ? document.activeElement.dataset.action : null;
   openDialog(item.title, `
-    <div id="viewer" class="viewer"><p role="status">Opening media…</p></div>
-    <footer class="viewer-foot">
+    <div class="tv-viewer-frame">
+      <div id="viewer" class="viewer"><p role="status">Opening media…</p></div>
+      <aside class="tv-viewer-side" aria-label="Current media and playback controls">
+        <div class="tv-viewer-top"><span class="tv-wordmark">STILLROOM <b>WATCH</b></span><span>${position + 1} / ${items.length}</span></div>
+        <div class="tv-viewer-copy">
+          <span class="tv-type">${item.kind === 'video' ? 'VIDEO' : 'PHOTO'}${viewing.fromDiscovery ? ' · DISCOVER' : ''}</span>
+          <h3>${escapeHtml(item.title)}</h3>
+          <p>${date(item.created)} · ${bytes(item.size)}</p>
+          ${item.description ? '<p class="tv-description">' + escapeHtml(item.description) + '</p>' : ''}
+        </div>
+        <div class="tv-player-actions">
+          ${item.kind === 'video' ? '<button class="button secondary tv-player-button" type="button" data-action="viewer-toggle" aria-label="Pause video">' + icon('pause') + ' Pause</button><button class="button secondary tv-player-button" type="button" data-action="viewer-mute" aria-label="Mute video">' + icon('volume') + ' Sound</button>' : ''}
+          <button class="button secondary tv-player-button" type="button" data-action="viewer-fullscreen" aria-label="Full screen">${icon('expand')} Full screen</button>
+        </div>
+        <footer class="viewer-foot">
       <button class="button secondary viewer-step" type="button" data-action="viewer-previous" aria-keyshortcuts="ArrowUp ArrowLeft" ${position <= 0 ? 'disabled' : ''}>${icon('previous')} <span>Previous</span></button>
       <div class="viewer-meta">
         <span>${position + 1} / ${items.length}</span>
         <details class="viewer-info"><summary>Details</summary><div class="viewer-detail-content">${viewerDetails(item)}</div></details>
       </div>
       <button class="button secondary viewer-step" type="button" data-action="viewer-next" aria-keyshortcuts="ArrowDown ArrowRight" ${position === items.length - 1 ? 'disabled' : ''}><span>Next</span> ${icon('next')}</button>
-      <p class="viewer-message form-message" role="status"></p>
-    </footer>`, 'media-dialog', autoButton + favouriteButton);
+          <p class="viewer-message form-message" role="status"></p>
+        </footer>
+        <p class="tv-remote-hint">TV remote: ↑ previous · ↓ next · OK play/pause</p>
+      </aside>
+    </div>`, 'media-dialog tv-media-dialog', autoButton + favouriteButton);
   const focusTarget = ['viewer-previous', 'viewer-next'].includes(focused)
     ? dialog.querySelector('[data-action="' + focused + '"]:not(:disabled)') : null;
-  (focusTarget || dialog.querySelector('[data-action="close"]')).focus({ preventScroll: true });
+  (focusTarget || dialog.querySelector(item.kind === 'video' ? '[data-action="viewer-toggle"]' : '[data-action="viewer-next"]:not(:disabled)') || dialog.querySelector('[data-action="close"]')).focus({ preventScroll: true });
   const viewer = dialog.querySelector('#viewer');
   let touch;
   viewer.addEventListener('pointerdown', event => {
@@ -561,6 +618,7 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
       element.muted = viewing.muted;
       element.addEventListener('volumechange', () => {
         if (viewing && element.isConnected) viewing.muted = element.muted;
+        syncViewerControls(element);
       });
       const play = document.createElement('button');
       play.className = 'viewer-play';
@@ -573,8 +631,8 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
           if (element.isConnected) element.focus();
         });
       });
-      element.addEventListener('play', () => { play.hidden = true; });
-      element.addEventListener('pause', () => { play.hidden = false; });
+      element.addEventListener('play', () => { play.hidden = true; syncViewerControls(element); });
+      element.addEventListener('pause', () => { play.hidden = false; syncViewerControls(element); });
       let refreshed = false;
       element.addEventListener('error', async () => {
         if (!element.isConnected || !dialog.open) return;
@@ -592,6 +650,7 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
         }
         setMessage(viewer, 'This video could not play. Try reopening it or use a browser-compatible MP4 or WebM.');
       });
+      syncViewerControls(element);
       playerCleanup = () => {
         element.pause();
         element.removeAttribute('src');
@@ -944,6 +1003,17 @@ document.addEventListener('click', async event => {
   if (action === 'upload' && !state.owner?.mediaPaused) return showUpload();
   if (action === 'pause') return activeUpload?.abort();
   if (action === 'close') return closeDialog();
+  if (action === 'viewer-toggle') return toggleViewerPlayback();
+  if (action === 'viewer-mute') {
+    const video = dialog.querySelector('#viewer video');
+    if (video) { video.muted = !video.muted; syncViewerControls(video); }
+    return;
+  }
+  if (action === 'viewer-fullscreen') {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    else dialog.requestFullscreen?.().catch(() => flash('Full screen is unavailable on this device.'));
+    return;
+  }
   if (action === 'viewer-previous') return stepViewer(-1);
   if (action === 'viewer-next') return stepViewer(1);
   if (action === 'viewer-auto') {
