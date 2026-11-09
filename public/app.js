@@ -1,3 +1,4 @@
+import { startTheater } from './theater.js';
 const app = document.querySelector('#app');
 const dialog = document.querySelector('#dialog');
 const notice = document.querySelector('#notice');
@@ -19,7 +20,14 @@ const icons = {
   arrow: '<path d="M4 12h15m-6-6 6 6-6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  check: '<path d="m5 12 4 4L19 6"/>'
+  check: '<path d="m5 12 4 4L19 6"/>',
+  pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+  volume: '<path d="M11 5 6 9H3v6h3l5 4V5Zm4 4a5 5 0 0 1 0 6m3-9a9 9 0 0 1 0 12"/>',
+  mute: '<path d="M11 5 6 9H3v6h3l5 4V5Zm4 4 6 6m0-6-6 6"/>',
+  shuffle: '<path d="M17 3h4v4m-1-3-6.5 6.5M3 5h4l10 14h4m0 0-4-4M3 19h4l3-4m7-12 4 4"/>',
+  expand: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
+  'arrow-up': '<path d="m6 14 6-6 6 6"/>',
+  'arrow-down': '<path d="m6 10 6 6 6-6"/>'
 };
 const icon = name => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + icons[name] + '</svg>';
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -164,8 +172,19 @@ function libraryPage() {
           <label class="sort"><span class="sr-only">Sort media</span><select id="sort"><option value="new" ${state.sort === 'new' ? 'selected' : ''}>Newest</option><option value="old" ${state.sort === 'old' ? 'selected' : ''}>Oldest</option><option value="name" ${state.sort === 'name' ? 'selected' : ''}>A–Z</option></select></label>
         </div>
       </div>
+      ${videos ? '<div class="watch-launch"><span><strong>Watch your videos</strong><small>Full-screen player · TV remote and swipe navigation</small></span><div class="watch-launch-buttons"><button class="button primary" type="button" data-action="watch">' + icon('play') + ' Play videos</button><button class="button secondary" type="button" data-action="shuffle-watch">' + icon('shuffle') + ' Shuffle</button></div></div>' : ''}
       <div id="gallery"></div>
     </section>`;
+}
+
+function visibleItems(kind = null) {
+  const query = state.query.trim().toLowerCase();
+  const items = state.items.filter(item =>
+    (kind ? item.kind === kind : (state.filter === 'all' || item.kind === state.filter)) &&
+    (item.title + ' ' + item.name).toLowerCase().includes(query));
+  if (state.sort === 'old') items.sort((a, b) => a.created - b.created);
+  if (state.sort === 'name') items.sort((a, b) => a.title.localeCompare(b.title));
+  return items;
 }
 
 function drawGallery() {
@@ -173,10 +192,8 @@ function drawGallery() {
   if (!gallery) return;
   thumbnailObserver?.disconnect();
   const revision = ++galleryRevision;
-  const query = state.query.trim().toLowerCase();
-  const items = state.items.filter(item => (state.filter === 'all' || item.kind === state.filter) && (item.title + ' ' + item.name).toLowerCase().includes(query));
-  if (state.sort === 'old') items.sort((a, b) => a.created - b.created);
-  if (state.sort === 'name') items.sort((a, b) => a.title.localeCompare(b.title));
+  const query = state.query.trim();
+  const items = visibleItems();
   if (!items.length) {
     const empty = !state.items.length && state.filter === 'all' && !query;
     gallery.innerHTML = `<div class="empty"><div class="empty-icon">${icon('photo')}</div><h3>${empty ? 'Your collection is empty' : 'No matching media'}</h3><p>${empty ? (isOwner() ? 'Add a photo or video to get started.' : 'Shared photos and videos will appear here.') : 'Try a different search or filter.'}</p>${empty && isOwner() ? '<button type="button" class="button secondary" data-action="upload">Add your first file</button>' : ''}</div>`;
@@ -256,52 +273,31 @@ dialog.addEventListener('close', () => {
   dialog.innerHTML = '';
 });
 
-async function showMedia(item) {
-  openDialog(item.title, `<div id="viewer" class="viewer"><p role="status">Opening media…</p></div>
-    <footer class="dialog-foot"><span class="muted">${escapeHtml(item.name)} · ${bytes(item.size)}</span>
-    ${isOwner() ? `<button class="button quiet danger-text" type="button" data-action="trash-item" data-id="${item.id}">${icon('trash')} Move to trash</button>` : ''}</footer>`, 'media-dialog');
+function showMedia(item, { random = false } = {}) {
+  if (!item) return;
+  const list = visibleItems(item.kind);
+  if (!list.length) return flash('No media is available in this selection.');
+  openDialog(item.title, '<div id="viewer" class="theater-root"></div>', 'media-dialog theater-dialog');
   const viewer = dialog.querySelector('#viewer');
-  try {
-    const route = '/api/media/' + item.id + '/link';
-    const link = await request(route);
-    let expires = link.expires;
-    if (!viewer.isConnected) return;
-    const element = document.createElement(item.kind === 'video' ? 'video' : 'img');
-    if (item.kind === 'video') {
-      element.controls = true;
-      element.playsInline = true;
-      element.preload = 'metadata';
-      let refreshed = false;
-      element.addEventListener('error', async () => {
-        if (!element.isConnected) return;
-        if (!refreshed || expires <= Date.now() + 5000) {
-          refreshed = true;
-          const time = element.currentTime;
-          try {
-            const fresh = await request(route);
-            if (!element.isConnected) return;
-            expires = fresh.expires;
-            element.addEventListener('loadedmetadata', () => { element.currentTime = time; }, { once: true });
-            element.src = fresh.url;
-            return;
-          } catch { /* show the playback message below */ }
-        }
-        setMessage(viewer, 'This video could not play. Try reopening it or use a browser-compatible MP4 or WebM.');
-      });
-      playerCleanup = () => {
-        element.pause();
-        element.removeAttribute('src');
-        element.load();
-      };
-    } else {
-      element.alt = item.title;
-      element.addEventListener('error', () => setMessage(viewer, 'This photo could not be opened.'));
+  playerCleanup = startTheater({
+    root: viewer,
+    items: list,
+    initialId: item.id,
+    random,
+    requestLink: mediaItem => request('/api/media/' + encodeURIComponent(mediaItem.id) + '/link'),
+    close: closeDialog,
+    icon,
+    bytes,
+    date,
+    onTrack: current => {
+      dialog.querySelector('#dialog-title').textContent = current.title;
+      if (isOwner()) {
+        const ownerActions = viewer.querySelector('#theater-owner-actions');
+        if (ownerActions) ownerActions.innerHTML =
+          '<button class="theater-delete" type="button" data-action="trash-item" data-id="' + escapeHtml(current.id) + '">' + icon('trash') + ' Move to trash</button>';
+      }
     }
-    viewer.replaceChildren(element);
-    element.src = link.url;
-  } catch (error) {
-    setMessage(viewer, error.message);
-  }
+  });
 }
 
 const fileTypes = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm' };
@@ -459,6 +455,12 @@ document.addEventListener('click', async event => {
   if (action === 'pause') return activeUpload?.abort();
   if (action === 'close') return closeDialog();
   if (action === 'media') return showMedia(state.items.find(item => item.id === id));
+  if (action === 'watch' || action === 'shuffle-watch') {
+    const items = visibleItems('video');
+    if (!items.length) return flash('No videos match the current search.');
+    const first = action === 'shuffle-watch' ? items[Math.floor(Math.random() * items.length)] : items[0];
+    return showMedia(first, { random: action === 'shuffle-watch' });
+  }
   if (action === 'copy') {
     const input = document.querySelector('#invite-url');
     try {
