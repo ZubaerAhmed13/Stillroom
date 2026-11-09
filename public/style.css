@@ -341,3 +341,8 @@ dialog::backdrop { background: #08090cda; }
   .tv-player-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tv-viewer-top { font-size: 10px; }
 }
+
+/* Position remote-friendly navigation on the same row, with details beneath. */
+.tv-viewer-side .viewer-step[data-action="viewer-previous"] { grid-column: 1; grid-row: 1; }
+.tv-viewer-side .viewer-step[data-action="viewer-next"] { grid-column: 2; grid-row: 1; }
+.tv-viewer-side .viewer-meta { grid-column: 1 / -1; grid-row: 2; }
