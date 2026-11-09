@@ -507,6 +507,11 @@ document.addEventListener('fullscreenchange', () => {
 dialog.addEventListener('keydown', event => {
   if (!viewing || editor.open || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
       event.target.closest('input, select, textarea, [contenteditable], .viewer-info[open]')) return;
+  if (['Backspace', 'BrowserBack', 'GoBack', 'Return'].includes(event.key)) {
+    event.preventDefault();
+    closeDialog();
+    return;
+  }
   const vertical = verticalKeyStep(event.key, event.keyCode);
   if (vertical) {
     event.preventDefault();
