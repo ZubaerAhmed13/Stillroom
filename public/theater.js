@@ -17,6 +17,7 @@ export function startTheater({ root, items, initialId, random = false, requestLi
   let closed = false;
   let version = 0;
   let media = null;
+  let muted = false;
   let touchStart = null;
   let lastChange = 0;
   const isVideo = original[0].kind === 'video';
@@ -55,7 +56,6 @@ export function startTheater({ root, items, initialId, random = false, requestLi
   const toggleButton = $('[data-player-action="toggle"]');
   const muteButton = $('[data-player-action="mute"]');
   const shuffleButton = $('[data-player-action="shuffle"]');
-  const info = $('.theater-info');
   if (!isVideo) {
     root.classList.add('is-photo-theater');
     screen.setAttribute('aria-label', 'Photo. Use Up and Down to move between photos');
@@ -125,6 +125,7 @@ export function startTheater({ root, items, initialId, random = false, requestLi
       element.setAttribute('aria-label', item.title || item.kind);
       if (item.kind === 'video') {
         element.playsInline = true;
+        element.muted = muted;
         element.loop = true;
         element.preload = 'metadata';
         element.addEventListener('loadedmetadata', () => {
@@ -199,7 +200,7 @@ export function startTheater({ root, items, initialId, random = false, requestLi
     if (action === 'next') move(1);
     if (action === 'previous') move(-1);
     if (action === 'toggle') togglePlay();
-    if (action === 'mute' && media && isVideo) { media.muted = !media.muted; updateSoundButton(); }
+    if (action === 'mute' && media && isVideo) { muted = !media.muted; media.muted = muted; updateSoundButton(); }
     if (action === 'shuffle') changeShuffle();
     if (action === 'fullscreen') {
       const target = root.closest('dialog') || root;
@@ -222,9 +223,15 @@ export function startTheater({ root, items, initialId, random = false, requestLi
       if (isVideo) { event.preventDefault(); seekBy(10); }
     } else if (event.key === 'ArrowLeft') {
       if (isVideo) { event.preventDefault(); seekBy(-10); }
-    } else if (event.key === ' ' || event.key === 'MediaPlayPause' || (event.key === 'Enter' && !onControl)) {
+    } else if (event.key === 'MediaPlay') {
+      event.preventDefault();
+      if (isVideo && media?.paused) togglePlay();
+    } else if (event.key === 'MediaPause') {
+      event.preventDefault();
+      if (isVideo && media && !media.paused) togglePlay();
+    } else if (event.key === ' ' || event.key === 'MediaPlayPause' || (!onControl && ['Enter', 'Select', 'OK'].includes(event.key))) {
       if (!onControl || event.key === 'MediaPlayPause') { event.preventDefault(); togglePlay(); }
-    } else if (event.key === 'Backspace') {
+    } else if (['Backspace', 'BrowserBack', 'GoBack', 'Return'].includes(event.key)) {
       event.preventDefault();
       close();
     }
@@ -241,6 +248,7 @@ export function startTheater({ root, items, initialId, random = false, requestLi
     if (Math.abs(dy) >= 65 && Math.abs(dy) > Math.abs(dx) * 1.3) move(dy < 0 ? 1 : -1);
   }
   function onWheel(event) {
+    if (event.target.closest('.theater-info')) return;
     if (Math.abs(event.deltaY) < 15 || Date.now() - lastChange < 650) return;
     event.preventDefault();
     move(event.deltaY > 0 ? 1 : -1);
@@ -263,7 +271,7 @@ export function startTheater({ root, items, initialId, random = false, requestLi
   shuffleButton.querySelector('span').textContent = shuffled ? 'Shuffle on' : 'Shuffle';
   if (queue.length <= 1) root.classList.add('single-item');
   showAt(index);
-  toggleButton.focus({ preventScroll: true });
+  (isVideo ? toggleButton : screen).focus({ preventScroll: true });
   return () => {
     closed = true;
     version++;
