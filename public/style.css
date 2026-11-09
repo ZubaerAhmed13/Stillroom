@@ -228,3 +228,92 @@ dialog::backdrop { background: #080d0bc9; }
   .list .button { padding-inline: 5px; font-size: 12px; }
   .list-icon { display: none; }
 }
+
+
+/* Full-screen Watch theater — designed for TVs, projectors, desktop, and phones. */
+.watch-launch { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 22px; padding: 16px 18px; border: 1px solid #425949; border-radius: 15px; background: linear-gradient(118deg, #203b2b, #1b2822); }
+.watch-launch > span { display: grid; gap: 3px; min-width: 0; }
+.watch-launch strong { font-size: 15px; }
+.watch-launch small { color: #baccc1; font-size: 12px; }
+.watch-launch-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.theater-dialog[open] { display: flex; flex-direction: column; width: min(calc(100vw - 24px), 1800px); height: min(calc(100dvh - 24px), 1000px); max-width: none; max-height: none; border: 1px solid #314138; border-radius: 17px; overflow: hidden; background: #090c0c; }
+.theater-dialog::backdrop { background: #020504eb; }
+.theater-dialog .dialog-head { min-height: 48px; flex: 0 0 auto; padding: 7px 18px; border-bottom: 1px solid #1c2924; background: #0c110f; }
+.theater-dialog .dialog-head h2 { font-size: 14px; font-weight: 600; color: #cbd5cd; letter-spacing: -.01em; }
+.theater-dialog .dialog-head .icon-button { width: 35px; height: 35px; border-radius: 50%; color: #e8ece8; }
+.theater-root { display: block; flex: 1; min-height: 0; height: 100%; }
+.theater-shell { height: 100%; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(285px, 26vw, 390px); background: #101713; }
+.theater-stage { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; overflow: hidden; background: radial-gradient(ellipse at 50% 45%, #17241d, #080c0b 67%); }
+.theater-topline { z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 19px 22px 9px; color: #b5c6ba; font-size: 11px; letter-spacing: .04em; }
+.theater-wordmark { color: #f0f6f1; font-weight: 800; letter-spacing: .15em; }
+.theater-wordmark span { margin-left: 5px; color: var(--mint); }
+.theater-screen { display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 0; margin: 0 18px; outline-offset: -3px; touch-action: pan-x; cursor: pointer; }
+.theater-screen video, .theater-screen img { display: block; width: auto; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; background: #050607; box-shadow: 0 14px 65px #0008; }
+.theater-screen.landscape video, .theater-screen.landscape img { width: 100%; height: auto; max-height: 100%; }
+.theater-stage-foot { z-index: 1; display: grid; gap: 9px; padding: 12px 22px 20px; color: #cbd6ce; font-size: 12px; }
+#theater-status { min-height: 18px; }
+.theater-progress { display: flex; gap: 12px; align-items: center; width: 100%; }
+.theater-progress input { flex: 1; min-width: 30px; padding: 0; height: 6px; border: 0; cursor: pointer; background: transparent; accent-color: var(--mint); }
+#theater-time { white-space: nowrap; color: #b9c5ba; font-variant-numeric: tabular-nums; }
+.theater-info { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 21px; padding: 30px 25px; border-left: 1px solid #2b3930; background: linear-gradient(145deg, #1c2821, #111813 70%); overflow-y: auto; overscroll-behavior: contain; }
+.theater-info-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.theater-chip { display: inline-flex; align-items: center; padding: 6px 9px; border: 1px solid #4b7059; border-radius: 999px; background: #2a4633; color: #ceecd6; font-size: 10px; font-weight: 760; letter-spacing: .12em; }
+.theater-count { color: #b2c3b5; font-size: 13px; font-variant-numeric: tabular-nums; }
+.theater-copy { display: grid; gap: 12px; min-width: 0; }
+.theater-copy h2 { font-size: clamp(23px, 2.4vw, 38px); font-weight: 720; line-height: 1.13; overflow-wrap: anywhere; }
+.theater-copy p { font-size: 13px; color: #b0c1b3; overflow-wrap: anywhere; line-height: 1.4; }
+#theater-file { color: #85998b; font-size: 11px; }
+.theater-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.theater-action { min-height: 67px; display: grid; place-content: center; justify-items: center; gap: 5px; padding: 10px; border: 1px solid #405848; border-radius: 13px; background: #26382c; color: #e5f0e7; font-size: 12px; font-weight: 640; }
+.theater-action:hover, .theater-nav:hover { background: #35513e; border-color: #759e80; }
+.theater-action svg { width: 22px; height: 22px; color: #a9e3c0; }
+.theater-action[aria-pressed="true"] { background: #365b42; border-color: #79aa87; }
+.theater-navigation { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.theater-nav { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 47px; padding: 9px 12px; border: 1px solid #385044; border-radius: 11px; background: #1e2d24; color: #e4eee5; font-size: 13px; font-weight: 650; }
+.theater-nav svg { width: 20px; height: 20px; }
+.theater-remote-hint { font-size: 12px; line-height: 1.5; color: #9db5a3; }
+.theater-owner-actions { margin-top: auto; padding-top: 9px; }
+.theater-delete { display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--danger); font-size: 12px; padding: 7px; border-radius: 7px; }
+.theater-delete:hover { background: #49302e; }
+.theater-delete svg { width: 16px; height: 16px; }
+.theater-root.is-photo-theater .theater-screen { cursor: default; }
+.theater-root.single-item .theater-navigation { opacity: .45; }
+.theater-root.single-item .theater-nav { cursor: default; }
+@media (min-width: 1450px) {
+  .theater-info { gap: 28px; padding: 38px 32px; }
+  .theater-action { min-height: 78px; }
+  .theater-navigation { margin-top: 3px; }
+}
+@media (max-width: 800px) {
+  .watch-launch { align-items: stretch; flex-direction: column; }
+  .watch-launch-buttons .button { flex: 1; }
+  .theater-dialog[open] { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
+  .theater-dialog .dialog-head { min-height: 43px; }
+  .theater-shell { display: flex; flex-direction: column; height: 100%; overflow-y: auto; }
+  .theater-stage { flex: none; height: clamp(310px, 57dvh, 600px); }
+  .theater-info { flex: 1 0 auto; gap: 12px; overflow: visible; padding: 15px 17px 27px; border-top: 1px solid #314b38; border-left: 0; }
+  .theater-copy { gap: 6px; }
+  .theater-copy h2 { font-size: clamp(21px, 6vw, 28px); }
+  .theater-copy p { font-size: 12px; }
+  .theater-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+  .theater-action { min-height: 65px; font-size: 10px; padding: 7px 3px; }
+  .theater-action svg { width: 20px; height: 20px; }
+  .theater-navigation { gap: 8px; }
+  .theater-nav { min-height: 44px; }
+  .theater-stage-foot { padding: 7px 12px 12px; }
+  .theater-topline { padding: 11px 13px 5px; font-size: 10px; }
+  .theater-screen { margin: 0 9px; }
+  .theater-remote-hint { display: none; }
+  .theater-owner-actions { margin-top: 0; }
+}
+@media (max-height: 540px) and (orientation: landscape) {
+  .theater-dialog[open] { width: 100vw; height: 100dvh; }
+  .theater-shell { flex-direction: row; overflow: hidden; }
+  .theater-stage { flex: 1; height: 100%; }
+  .theater-info { width: 280px; max-width: 38vw; overflow-y: auto; }
+  .theater-copy h2 { font-size: 20px; }
+  .theater-actions { grid-template-columns: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .theater-dialog *, .theater-dialog *::before, .theater-dialog *::after { scroll-behavior: auto; animation: none !important; }
+}
