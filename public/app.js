@@ -562,6 +562,7 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
     ? `<button class="button quiet viewer-auto" type="button" data-action="viewer-auto" aria-pressed="${viewing.automatic}">Auto-next</button>` : '';
   const favouriteButton = isOwner() ? `<button class="icon-button viewer-favourite" type="button" data-action="favourite" data-id="${item.id}" aria-label="Favourite" title="Favourite" aria-pressed="${item.favourite}">${icon('heart')}</button>` : '';
   const focused = dialog.contains(document.activeElement) ? document.activeElement.dataset.action : null;
+  const currentCollection = state.collections.find(entry => entry.id === item.collectionId);
   openDialog(item.title, `
     <div class="tv-viewer-frame">
       <div id="viewer" class="viewer"><p role="status">Opening media…</p></div>
@@ -571,6 +572,7 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
           <span class="tv-type">${item.kind === 'video' ? 'VIDEO' : 'PHOTO'}${viewing.fromDiscovery ? ' · DISCOVER' : ''}</span>
           <h3>${escapeHtml(item.title)}</h3>
           <p>${date(item.created)} · ${bytes(item.size)}</p>
+          ${currentCollection ? '<p>Collection · ' + escapeHtml(currentCollection.name) + '</p>' : ''}
           ${item.description ? '<p class="tv-description">' + escapeHtml(item.description) + '</p>' : ''}
         </div>
         <div class="tv-player-actions">
@@ -589,7 +591,7 @@ async function showMedia(item, { origin, fromDiscovery = false } = {}) {
         <p class="tv-remote-hint">TV remote: ↑ previous · ↓ next · OK play/pause</p>
       </aside>
     </div>`, 'media-dialog tv-media-dialog', autoButton + favouriteButton);
-  const focusTarget = ['viewer-previous', 'viewer-next'].includes(focused)
+  const focusTarget = item.kind === 'photo' && ['viewer-previous', 'viewer-next'].includes(focused)
     ? dialog.querySelector('[data-action="' + focused + '"]:not(:disabled)') : null;
   (focusTarget || dialog.querySelector(item.kind === 'video' ? '[data-action="viewer-toggle"]' : '[data-action="viewer-next"]:not(:disabled)') || dialog.querySelector('[data-action="close"]')).focus({ preventScroll: true });
   const viewer = dialog.querySelector('#viewer');
