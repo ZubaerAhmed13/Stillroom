@@ -282,3 +282,62 @@ dialog::backdrop { background: #08090cda; }
   .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .entry { padding: 12px; }
 }
+
+
+/* YouTube Shorts-inspired TV theater: portrait video plus readable side information. */
+.tv-media-dialog[open] { grid-template-rows: auto minmax(0, 1fr); }
+.tv-media-dialog .dialog-head { min-height: 54px; background: #0e1415; }
+.tv-media-dialog .dialog-head h2 { font-size: clamp(14px, 1.4vw, 18px); color: #d7e2df; }
+.tv-viewer-frame { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 27vw, 420px); overflow: hidden; background: #090c0d; }
+.tv-viewer-frame .viewer { min-width: 0; min-height: 0; overflow: hidden; background: radial-gradient(ellipse at 48% 47%, #182321, #060909 73%); }
+.tv-viewer-frame .viewer video, .tv-viewer-frame .viewer img { width: 100%; height: 100%; max-width: none; object-fit: contain; }
+.tv-viewer-frame .viewer-play { z-index: 1; border-color: #e5f5e6a0; background: #101b18d9; }
+.tv-viewer-side { display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: 24px; padding: clamp(22px, 3vw, 43px) clamp(19px, 2.4vw, 33px); border-left: 1px solid #30433b; background: linear-gradient(145deg, #1c2c25 0%, #101917 72%); overflow-y: auto; overscroll-behavior: contain; }
+.tv-viewer-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #9db6ac; font-size: 12px; font-variant-numeric: tabular-nums; }
+.tv-wordmark { color: #eff7f0; font-weight: 800; letter-spacing: .13em; }
+.tv-wordmark b { color: var(--mint); font-weight: 700; }
+.tv-viewer-copy { display: grid; min-width: 0; gap: 12px; }
+.tv-viewer-copy h3 { font-size: clamp(25px, 2.6vw, 39px); line-height: 1.15; font-weight: 700; color: #f7faf7; overflow-wrap: anywhere; }
+.tv-viewer-copy p { color: #aabdb3; font-size: 13px; overflow-wrap: anywhere; }
+.tv-viewer-copy .tv-description { color: #d0dfd4; white-space: pre-wrap; line-height: 1.55; }
+.tv-type { width: max-content; max-width: 100%; padding: 6px 10px; border: 1px solid #446c53; border-radius: 999px; background: #2c4837; color: #c4eed4; font-size: 10px; font-weight: 750; letter-spacing: .12em; }
+.tv-player-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.tv-player-button { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; min-height: 57px; padding: 12px 9px; border: 1px solid #4a6a58; border-radius: 12px; background: #263e31; color: #ecf5ee; font-size: 13px; font-weight: 680; }
+.tv-player-button svg { width: 21px; height: 21px; color: #aff0c4; }
+.tv-player-button:hover { background: #375442; border-color: #94c6a1; }
+.tv-viewer-side .viewer-foot { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px; align-items: center; padding: 0; border: 0; background: transparent; }
+.tv-viewer-side .viewer-step { min-height: 51px; justify-content: center; border: 1px solid #4b6655; border-radius: 12px; background: #203126; font-size: 13px; }
+.tv-viewer-side .viewer-step:hover:not(:disabled) { background: #345242; }
+.tv-viewer-side .viewer-meta { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; color: #adc1b3; }
+.tv-viewer-side .viewer-info { min-width: 0; }
+.tv-viewer-side .viewer-info summary { min-height: 42px; padding: 6px 12px; border: 1px solid #3b5646; border-radius: 10px; }
+.tv-viewer-side .viewer-info > div { left: 0; transform: none; width: 100%; max-height: 55dvh; overflow-y: auto; box-shadow: 0 12px 30px #0007; }
+.tv-viewer-side .viewer-message { bottom: calc(100% + 6px); max-width: 100%; }
+.tv-remote-hint { margin-top: auto; color: #8ea99a; font-size: 12px; line-height: 1.5; }
+.tv-viewer-frame .viewer video:focus-visible, .tv-player-button:focus-visible, .tv-viewer-side .viewer-step:focus-visible { outline: 3px solid #adf1be; outline-offset: -3px; }
+@media (min-width: 1500px) {
+  .tv-viewer-side { gap: 32px; }
+  .tv-player-button { min-height: 69px; }
+  .tv-viewer-side .viewer-step { min-height: 58px; }
+}
+@media (max-width: 800px) {
+  .tv-media-dialog .dialog-head { min-height: 46px; }
+  .tv-viewer-frame { display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
+  .tv-viewer-frame .viewer { flex: 0 0 auto; height: min(60dvh, 580px); min-height: 260px; }
+  .tv-viewer-side { flex: 1 0 auto; gap: 13px; padding: 17px 17px calc(20px + env(safe-area-inset-bottom)); border-left: 0; border-top: 1px solid #30433b; overflow: visible; }
+  .tv-viewer-copy { gap: 7px; }
+  .tv-viewer-copy h3 { font-size: clamp(22px, 6vw, 29px); }
+  .tv-player-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+  .tv-player-button { min-height: 48px; padding: 8px 4px; font-size: 11px; }
+  .tv-player-button svg { width: 18px; height: 18px; }
+  .tv-viewer-side .viewer-step { min-height: 46px; }
+  .tv-remote-hint { display: none; }
+}
+@media (max-height: 540px) and (orientation: landscape) {
+  .tv-viewer-frame { flex-direction: row; overflow: hidden; }
+  .tv-viewer-frame .viewer { flex: 1; height: 100%; min-height: 0; }
+  .tv-viewer-side { width: min(35vw, 330px); min-height: 0; height: 100%; border-top: 0; border-left: 1px solid #30433b; padding: 10px 12px; overflow-y: auto; }
+  .tv-viewer-copy h3 { font-size: 20px; }
+  .tv-player-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tv-viewer-top { font-size: 10px; }
+}
