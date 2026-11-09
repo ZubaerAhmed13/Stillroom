@@ -1,0 +1,24 @@
+name: Stillroom TV player verification
+on:
+  push:
+    branches: [feature/tv-shorts-pilot-20261109]
+  pull_request:
+    branches: [interface-alpha, main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate JavaScript syntax
+        run: |
+          node --check public/app.js
+          node --check public/gallery.mjs
+          node --check hosted/worker.mjs
+      - name: Run regression suite
+        run: npm test
