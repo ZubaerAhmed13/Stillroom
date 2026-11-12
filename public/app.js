@@ -268,9 +268,20 @@ async function showMedia(item) {
     if (!viewer.isConnected) return;
     const element = document.createElement(item.kind === 'video' ? 'video' : 'img');
     if (item.kind === 'video') {
-      element.controls = true;
+      // Immersive playback: hide browser controls and the elapsed-time bar.
+      element.controls = false;
       element.playsInline = true;
       element.preload = 'metadata';
+      element.setAttribute('aria-label', item.title + '. Tap to play or pause. Press Escape to close.');
+      element.tabIndex = 0;
+      const togglePlayback = () => element.paused ? element.play().catch(() => {}) : element.pause();
+      element.addEventListener('click', togglePlayback);
+      element.addEventListener('keydown', event => {
+        if (event.code === 'Space' || event.code === 'Enter') {
+          event.preventDefault();
+          togglePlayback();
+        }
+      });
       let refreshed = false;
       element.addEventListener('error', async () => {
         if (!element.isConnected) return;
